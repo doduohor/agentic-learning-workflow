@@ -6,9 +6,9 @@
 
 **Status:** ready-for-agent
 
-- [ ] Есть reusable templates для семи основных Topic Workspace artifacts.
-- [ ] Шаблоны явно сохраняют owner files: `Goal.md` для Topic State, Active Block, Block Status и Mastery Level; `Sources.md` для Source Check Result; `Questions.md` для Question State и Card Candidate status.
-- [ ] Шаблоны показывают, где хранятся curated Knowledge, structured Practice Attempts, Weakness records, Active Repetition records и Source Records.
-- [ ] Optional `sessions/` описан как архив Session Notes и Practice Artifacts, а не обязательная часть каждой темы.
-- [ ] В шаблонах нет YAML/JSON machine-readable schema.
-- [ ] Создание шаблонов не создает новую учебную тему и не расширяет prototype.
+- [x] Есть reusable templates для семи основных Topic Workspace artifacts.
+- [x] Шаблоны явно сохраняют owner files: `Goal.md` для Topic State, Active Block, Block Status и Mastery Level; `Sources.md` для Source Check Result; `Questions.md` для Question State и Card Candidate status.
+- [x] Шаблоны показывают, где хранятся curated Knowledge, structured Practice Attempts, Weakness records, Active Repetition records и Source Records.
+- [x] Optional `sessions/` описан как архив Session Notes и Practice Artifacts, а не обязательная часть каждой темы.
+- [x] В шаблонах нет YAML/JSON machine-readable schema.
+- [x] Создание шаблонов не создает новую учебную тему и не расширяет prototype.
