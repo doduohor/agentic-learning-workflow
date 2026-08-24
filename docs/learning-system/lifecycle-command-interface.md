@@ -28,6 +28,12 @@ append-only Agent Write Boundary.
 
 ## `start/intake`
 
+Реализация аргументного сценария находится в
+`tools/start_topic_intake.py`. Она принимает `--subject`, `--topic`,
+`--stable-slug`, `--learning-profile` и `--draft-goal`; до записи проверяет
+конфликт slug/пути, после записи запускает Lightweight Checker и откатывает
+Topic Workspace вместе со строкой индекса при error.
+
 - **Вход:** запрос пользователя и достаточно конкретная Topic; слишком широкая
   тема сначала сужается либо получает Parent Topic.
 - **Читается:** `CONTEXT.md`, `docs/wayfinder/00-map.md`, `topics/INDEX.md` и,

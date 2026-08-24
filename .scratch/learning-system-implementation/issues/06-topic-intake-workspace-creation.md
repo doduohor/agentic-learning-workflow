@@ -6,9 +6,9 @@
 
 **Status:** ready-for-agent
 
-- [ ] Intake собирает Subject, Topic, Stable Slug, Topic Workspace path, Learning Profile и черновую цель.
-- [ ] Новая Topic Workspace создается из принятых templates, а не из ручной копии prototype.
-- [ ] Topic Index получает навигационную строку, но не становится source of truth для Topic State.
-- [ ] `Goal.md` получает Topic State `intake` или другой разрешенный стартовый state по принятому lifecycle.
-- [ ] После создания запускается read-only checker или эквивалентная проверка созданной структуры.
-- [ ] Сценарий не создает Anki cards, Obsidian notes, Agent Files или новую полноценную учебную тему сверх intake-структуры.
+- [x] Intake собирает Subject, Topic, Stable Slug, Topic Workspace path, Learning Profile и черновую цель.
+- [x] Новая Topic Workspace создается из принятых templates, а не из ручной копии prototype.
+- [x] Topic Index получает навигационную строку, но не становится source of truth для Topic State.
+- [x] `Goal.md` получает Topic State `intake` или другой разрешенный стартовый state по принятому lifecycle.
+- [x] После создания запускается read-only checker или эквивалентная проверка созданной структуры.
+- [x] Сценарий не создает Anki cards, Obsidian notes, Agent Files или новую полноценную учебную тему сверх intake-структуры.
