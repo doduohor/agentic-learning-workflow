@@ -64,6 +64,12 @@ Source Check gate пройден и выполнены Obsidian/Anki Duplicate C
 Learning Orchestrator; supporting agent может лишь предложить его. Подробный порядок — в
 [workflow интеграции](../wayfinder/decisions/12-design-obsidian-and-anki-write-automation.md).
 
+Read-only порядок, формат Duplicate Check summary и unavailable mode описаны в
+[workflow проверки дублей](duplicate-check-workflow.md). Summary для Card
+Promotion хранится в `Questions.md`, для Knowledge Consolidation — в
+`Knowledge.md`; supporting agent возвращает его как Agent Proposal, а итоговый
+trace применяет только Learning Orchestrator.
+
 Только Orchestrator-controlled workflow может писать в Obsidian или Anki: он
 сначала показывает dry-run preview, получает user approval, проверяет доступность
 target и trace/idempotency. Supporting agents могут готовить текст и proposal,
