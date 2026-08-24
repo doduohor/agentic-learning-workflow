@@ -8,7 +8,8 @@
 - `01-learning-artifact-templates.md`;
 - `03-agent-common-instructions.md`.
 
-Запуск выполняется в рабочей директории `/home/doduohor/learning`. Это
+Запуск выполняется в рабочей директории
+`/home/doduohor/learning/agentic-learning-workflow`. Это
 реализационная сессия: агент создает шаблоны и общий контракт, но не создает
 файлы ролей в `.codex/agents/*.toml`. Последнее относится к следующей сессии C.
 
