@@ -6,9 +6,9 @@
 
 **Status:** ready-for-agent
 
-- [ ] Перед созданием файлов проверена актуальная схема Codex custom agent files.
-- [ ] Созданы agent definitions для Learning Orchestrator, learning support, practice, question/card, source и repetition ролей.
-- [ ] Learning Orchestrator явно владеет Topic State, Active Block, Block Status, Mastery Level, Completion Criteria, Card Promotion и Knowledge Consolidation decisions.
-- [ ] Supporting agents явно не могут менять `Goal.md`, `Knowledge.md`, `Weaknesses.md` напрямую.
-- [ ] Каждый supporting agent либо возвращает Agent Proposal, либо пишет только append-only в один разрешенный owner file по явному поручению.
-- [ ] Agent Files ссылаются на общие инструкции и не дублируют всю спецификацию.
+- [x] Перед созданием файлов проверена актуальная схема Codex custom agent files.
+- [x] Созданы agent definitions для Learning Orchestrator, learning support, practice, question/card, source и repetition ролей.
+- [x] Learning Orchestrator явно владеет Topic State, Active Block, Block Status, Mastery Level, Completion Criteria, Card Promotion и Knowledge Consolidation decisions.
+- [x] Supporting agents явно не могут менять `Goal.md`, `Knowledge.md`, `Weaknesses.md` напрямую.
+- [x] Каждый supporting agent либо возвращает Agent Proposal, либо пишет только append-only в один разрешенный owner file по явному поручению.
+- [x] Agent Files ссылаются на общие инструкции и не дублируют всю спецификацию.
