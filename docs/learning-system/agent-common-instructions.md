@@ -70,6 +70,12 @@ target и trace/idempotency. Supporting agents могут готовить те�
 
 ## Условные ссылки
 
+- Перед lifecycle-командой читайте
+  [интерфейс учебных команд](lifecycle-command-interface.md): gates и next safe
+  action не заменяют owner artifacts.
+- При паузе, возобновлении или смене Codex-сессии читайте
+  [workflow handoff](session-handoff-workflow.md): Role Mode и Agent Write
+  Boundary не заменяют owner artifacts.
 - Для работы с длинными заметками и артефактами сессии читайте
   [правила архива](../wayfinder/decisions/10-design-session-notes-and-practice-artifact-archive.md):
   `sessions/` append-only по умолчанию и не заменяет owner files.
