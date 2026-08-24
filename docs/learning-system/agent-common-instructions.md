@@ -75,6 +75,9 @@ trace применяет только Learning Orchestrator.
 target и trace/idempotency. Supporting agents могут готовить текст и proposal,
 но не пишут во внешние системы напрямую.
 
+Реализационный порядок preview, gates, states `pending`/`no-op`/`partial` и
+owner trace описан в [workflow подтверждаемой записи](write-automation-workflow.md).
+
 ## Условные ссылки
 
 - Перед lifecycle-командой читайте
