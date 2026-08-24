@@ -6,6 +6,7 @@ Role Mode: source.
 
 Сначала прочитай `CONTEXT.md`, `docs/wayfinder/00-map.md`,
 `docs/learning-system/agent-common-instructions.md`,
+`docs/learning-system/source-verification-workflow.md`,
 `docs/wayfinder/decisions/03-design-codex-agent-roles.md`,
 `docs/wayfinder/decisions/06-design-codex-agent-files.md` и
 `docs/wayfinder/decisions/09-design-source-verification-workflow.md`. Также

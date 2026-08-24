@@ -138,6 +138,145 @@ class TopicWorkspaceCheckerTests(unittest.TestCase):
 
         self.assertTrue(any(finding.gate_impact == "blocks production-ready" for finding in findings))
 
+    def test_english_source_result_field_still_blocks_production_ready(self) -> None:
+        sources = self.workspace / "Sources.md"
+        sources.write_text(
+            sources.read_text(encoding="utf-8").replace(
+                "Результат (Result): `needs-check`",
+                "Source Check Result: `needs-check`",
+            ),
+            encoding="utf-8",
+        )
+        goal = self.workspace / "Goal.md"
+        goal.write_text(
+            goal.read_text(encoding="utf-8").replace("`recognition` | `active`", "`production-ready` | `active`", 1),
+            encoding="utf-8",
+        )
+
+        findings = self.check()
+
+        self.assertTrue(any(finding.gate_impact == "blocks production-ready" for finding in findings))
+
+    def test_verified_source_result_is_accepted(self) -> None:
+        sources = self.workspace / "Sources.md"
+        sources.write_text(
+            sources.read_text(encoding="utf-8").replace("`needs-check`", "`verified`"),
+            encoding="utf-8",
+        )
+
+        findings = self.check()
+
+        self.assertFalse(
+            any(finding.id == "invalid-value" and finding.file == "Sources.md" for finding in findings)
+        )
+
+    def test_rejected_source_blocks_completed_topic(self) -> None:
+        sources = self.workspace / "Sources.md"
+        sources.write_text(
+            sources.read_text(encoding="utf-8").replace("`needs-check`", "`rejected`"),
+            encoding="utf-8",
+        )
+        goal = self.workspace / "Goal.md"
+        goal.write_text(
+            goal.read_text(encoding="utf-8").replace("`learning`", "`completed`", 1),
+            encoding="utf-8",
+        )
+
+        findings = self.check()
+
+        self.assertTrue(any(finding.id == "unverified-source-gate" for finding in findings))
+
+    def test_superseded_source_without_follow_up_is_reported(self) -> None:
+        sources = self.workspace / "Sources.md"
+        content = sources.read_text(encoding="utf-8").replace("`needs-check`", "`superseded`")
+        content = content.replace(
+            "#### Заметки (Notes)\n\nЭтот Source Record намеренно оставлен в `superseded`: prototype проверяет форму рабочего пространства, а не решает полный source verification workflow.",
+            "#### Заметки (Notes)\n\n-",
+        )
+        content = content.replace(
+            "Следующая проверка (Next Check): перед повышением B03 выше `recognition`",
+            "Следующая проверка (Next Check): -",
+        )
+        sources.write_text(content, encoding="utf-8")
+
+        findings = self.check()
+
+        self.assertTrue(any(finding.id == "missing-superseded-followup" for finding in findings))
+
+    def test_superseded_source_requires_replacement_or_next_check(self) -> None:
+        sources = self.workspace / "Sources.md"
+        content = sources.read_text(encoding="utf-8").replace("`needs-check`", "`superseded`")
+        content = content.replace(
+            "#### Заметки (Notes)\n\nЭтот Source Record намеренно оставлен в `superseded`: prototype проверяет форму рабочего пространства, а не решает полный source verification workflow.",
+            "#### Заметки (Notes)\n\nСтарый источник больше не использовать.",
+        )
+        content = content.replace(
+            "Следующая проверка (Next Check): перед повышением B03 выше `recognition`",
+            "Следующая проверка (Next Check): -",
+        )
+        sources.write_text(content, encoding="utf-8")
+
+        findings = self.check()
+
+        self.assertTrue(any(finding.id == "missing-superseded-followup" for finding in findings))
+
+    def test_superseded_source_cannot_name_itself_as_replacement(self) -> None:
+        sources = self.workspace / "Sources.md"
+        content = sources.read_text(encoding="utf-8").replace("`needs-check`", "`superseded`")
+        content = content.replace(
+            "#### Заметки (Notes)\n\nЭтот Source Record намеренно оставлен в `superseded`: prototype проверяет форму рабочего пространства, а не решает полный source verification workflow.",
+            "#### Заметки (Notes)\n\nЗаменён [SRC-20260824-01](#src-20260824-01---rabbitmq-dead-letter-behavior).",
+        )
+        content = content.replace(
+            "Следующая проверка (Next Check): перед повышением B03 выше `recognition`",
+            "Следующая проверка (Next Check): -",
+        )
+        sources.write_text(content, encoding="utf-8")
+
+        findings = self.check()
+
+        self.assertTrue(any(finding.id == "missing-superseded-followup" for finding in findings))
+
+    def test_superseded_source_cannot_support_production_ready(self) -> None:
+        sources = self.workspace / "Sources.md"
+        sources.write_text(
+            sources.read_text(encoding="utf-8").replace("`needs-check`", "`superseded`"),
+            encoding="utf-8",
+        )
+        goal = self.workspace / "Goal.md"
+        goal.write_text(
+            goal.read_text(encoding="utf-8").replace("`recognition` | `active`", "`production-ready` | `active`", 1),
+            encoding="utf-8",
+        )
+
+        findings = self.check()
+
+        self.assertTrue(any(finding.id == "unverified-source-gate" for finding in findings))
+
+    def test_unlinked_needs_check_marker_blocks_completed_topic(self) -> None:
+        goal = self.workspace / "Goal.md"
+        goal.write_text(
+            goal.read_text(encoding="utf-8").replace("`learning`", "`completed`", 1)
+            + "\n- Sensitive claim: Нужно проверить.\n",
+            encoding="utf-8",
+        )
+
+        findings = self.check()
+
+        self.assertTrue(any(finding.id == "unlinked-needs-check" and finding.gate_impact == "blocks completed" for finding in findings))
+
+    def test_needs_check_marker_can_link_source_in_next_list_item(self) -> None:
+        goal = self.workspace / "Goal.md"
+        goal.write_text(
+            goal.read_text(encoding="utf-8").replace("`learning`", "`completed`", 1)
+            + "\n- Sensitive claim: Нужно проверить.\n- Source: [SRC-20260824-01](Sources.md#src-20260824-01---rabbitmq-dead-letter-behavior)\n",
+            encoding="utf-8",
+        )
+
+        findings = self.check()
+
+        self.assertFalse(any(finding.id == "unlinked-needs-check" for finding in findings))
+
     def test_needs_check_blocks_completed(self) -> None:
         goal = self.workspace / "Goal.md"
         goal.write_text(
@@ -159,6 +298,18 @@ class TopicWorkspaceCheckerTests(unittest.TestCase):
         findings = self.check()
 
         self.assertTrue(any(finding.gate_impact == "blocks card-promotion" for finding in findings))
+
+    def test_needs_check_blocks_knowledge_consolidation(self) -> None:
+        knowledge = self.workspace / "Knowledge.md"
+        knowledge.write_text(
+            knowledge.read_text(encoding="utf-8")
+            + "\n## Knowledge Consolidation\n\n- Source: [SRC-20260824-01](Sources.md#src-20260824-01---rabbitmq-dead-letter-behavior)\n",
+            encoding="utf-8",
+        )
+
+        findings = self.check()
+
+        self.assertTrue(any(finding.gate_impact == "blocks knowledge-consolidation" for finding in findings))
 
     def test_candidate_card_is_a_non_blocking_draft_orphan_warning(self) -> None:
         findings = self.check()

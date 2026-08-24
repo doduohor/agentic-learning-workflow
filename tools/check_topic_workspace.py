@@ -277,7 +277,18 @@ def validate_sources(files: dict[str, str], findings: list[Finding]) -> None:
     sources = files.get("Sources.md", "")
     for source_id, section in source_sections(sources):
         result = field_value(section, "Source Check Result", "Результат (Result)")
-        if result == "superseded" and not re.search(r"(?:Notes|Заметки|Next Check|Следующая проверка).*?(?!-\s*$).+", section, re.DOTALL):
+        if result != "superseded":
+            continue
+        next_check = field_value(section, "Next Check", "Следующая проверка")
+        notes = re.search(
+            r"^####\s+(?:Notes|Заметки).*?\n\n(.*?)(?=^#{1,4}\s+|\Z)",
+            section,
+            flags=re.MULTILINE | re.DOTALL,
+        )
+        notes_text = notes.group(1).strip() if notes is not None else ""
+        replacement_ids = set(re.findall(ID_PATTERNS["SRC"].pattern[:-1], notes_text)) - {source_id}
+        has_replacement = bool(replacement_ids)
+        if next_check in {None, "-"} and not has_replacement:
             append_finding(findings, "missing-superseded-followup", "warning", "does not block", "Sources.md", source_id, "укажите заменяющий источник или Next Check")
 
 
@@ -320,10 +331,10 @@ def source_sections(text: str) -> Iterable[tuple[str, str]]:
         yield match.group(1), match.group(0)
 
 
-def needs_check_references(sources: str) -> dict[str, set[str]]:
+def unverified_source_references(sources: str) -> dict[str, set[str]]:
     references: dict[str, set[str]] = {}
     for source_id, section in source_sections(sources):
-        if re.search(r"Результат \(Result\): `needs-check`", section):
+        if field_value(section, "Source Check Result", "Результат (Result)") != "verified":
             references[source_id] = {
                 entity_id
                 for pattern in ID_PATTERNS.values()
@@ -332,18 +343,35 @@ def needs_check_references(sources: str) -> dict[str, set[str]]:
     return references
 
 
-def has_needs_check_evidence(needs_check: dict[str, set[str]], target_ids: set[str]) -> bool:
-    return bool(target_ids and any(target_ids & references for references in needs_check.values()))
+def has_unverified_source_evidence(unverified: dict[str, set[str]], target_ids: set[str]) -> bool:
+    return bool(target_ids and any(target_ids & references for references in unverified.values()))
+
+
+def has_unlinked_needs_check_marker(text: str) -> bool:
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if "Нужно проверить" not in line:
+            continue
+        context = [line]
+        for following in lines[index + 1:]:
+            if not following.strip() or following.startswith("#"):
+                break
+            context.append(following)
+        if not re.search(ID_PATTERNS["SRC"].pattern[:-1], "\n".join(context)):
+            return True
+    return False
 
 
 def validate_gates(files: dict[str, str], findings: list[Finding]) -> None:
     goal = files.get("Goal.md", "")
     sources = files.get("Sources.md", "")
     questions = files.get("Questions.md", "")
-    needs_check = needs_check_references(sources)
+    unverified = unverified_source_references(sources)
     production_blocks = set(re.findall(r"\|\s*`(B\d{2})`.*?\|\s*`production-ready`\s*\|", goal))
-    if has_needs_check_evidence(needs_check, production_blocks):
-        append_finding(findings, "needs-check-gate", "error", "blocks production-ready", "Goal.md", "SRC-* needs-check", "проверьте источник или не используйте claim для production-ready")
+    if has_unverified_source_evidence(unverified, production_blocks):
+        append_finding(findings, "unverified-source-gate", "error", "blocks production-ready", "Goal.md", "SRC-*", "используйте verified Source Record для production-ready")
+    if production_blocks and has_unlinked_needs_check_marker(goal):
+        append_finding(findings, "unlinked-needs-check", "error", "blocks production-ready", "Goal.md", "Нужно проверить", "свяжите sensitive claim с SRC-* или исключите его из gate evidence")
     for block_id in production_blocks:
         row = next((line for line in goal.splitlines() if f"`{block_id}`" in line and line.startswith("|")), "")
         if "PA-" not in row or any(result in row for result in ("`unchecked`", "`failed`", "`rework-needed`")):
@@ -352,12 +380,12 @@ def validate_gates(files: dict[str, str], findings: list[Finding]) -> None:
             append_finding(findings, "open-blocker-weakness", "error", "blocks production-ready", "Weaknesses.md", block_id, "закройте blocker Weakness перед production-ready")
     if "Состояние темы (Topic State): `completed`" in goal:
         completion_sources = set(re.findall(ID_PATTERNS["SRC"].pattern[:-1], goal))
-        if has_needs_check_evidence(needs_check, completion_sources):
-            append_finding(findings, "needs-check-gate", "error", "blocks completed", "Goal.md", "SRC-* needs-check", "проверьте обязательный источник до completed")
+        if has_unverified_source_evidence(unverified, completion_sources):
+            append_finding(findings, "unverified-source-gate", "error", "blocks completed", "Goal.md", "SRC-*", "используйте verified Source Record для completed")
+        if has_unlinked_needs_check_marker(goal):
+            append_finding(findings, "unlinked-needs-check", "error", "blocks completed", "Goal.md", "Нужно проверить", "свяжите sensitive claim с SRC-* или исключите его из Completion Evidence")
         if any(field_value(section, "Severity", "Серьезность") == "blocker" and field_value(section, "Weakness Status", "Статус (Status)") in {"open", "repairing", "retest-needed"} for _, section in record_sections(files.get("Weaknesses.md", ""), "W")):
             append_finding(findings, "open-blocker-weakness", "error", "blocks completed", "Weaknesses.md", "W-*", "закройте blocker Weakness перед completed")
-        if any(field_value(section, "Source Check Result", "Результат (Result)") == "rejected" and source_id in goal for source_id, section in source_sections(sources)):
-            append_finding(findings, "rejected-source-gate", "error", "blocks completed", "Goal.md", "SRC-* rejected", "замените или удалите rejected Source из Completion Criteria")
         for required in re.findall(r"\|\s*`(B\d{2})`.*?\|\s*`required`\s*\|\s*`([^`]+)`", goal):
             if required[1] != "stable":
                 append_finding(findings, "incomplete-required-block", "error", "blocks completed", "Goal.md", required[0], "доведите required Block до stable")
@@ -380,14 +408,18 @@ def validate_gates(files: dict[str, str], findings: list[Finding]) -> None:
         if not decision or decision.group(1).strip() == "-":
             missing.append("Promotion Decision")
         question_sources = set(re.findall(ID_PATTERNS["SRC"].pattern[:-1], section)) | {question_id}
-        if has_needs_check_evidence(needs_check, question_sources):
+        if has_unverified_source_evidence(unverified, question_sources):
             missing.append("verified Source Check")
+        if has_unlinked_needs_check_marker(section):
+            missing.append("SRC-* для Нужно проверить")
         if missing:
             append_finding(findings, "card-promotion-gate", "error" if promoted else "warning", "blocks card-promotion" if promoted else "does not block", "Questions.md", question_id, "добавьте " + ", ".join(missing))
     knowledge = files.get("Knowledge.md", "")
     knowledge_sources = set(re.findall(ID_PATTERNS["SRC"].pattern[:-1], knowledge))
-    if has_needs_check_evidence(needs_check, knowledge_sources) and "Knowledge Consolidation" in knowledge:
-        append_finding(findings, "needs-check-gate", "error", "blocks knowledge-consolidation", "Knowledge.md", "SRC-* needs-check", "проверьте источник до консолидации знания")
+    if has_unverified_source_evidence(unverified, knowledge_sources) and "Knowledge Consolidation" in knowledge:
+        append_finding(findings, "unverified-source-gate", "error", "blocks knowledge-consolidation", "Knowledge.md", "SRC-*", "используйте verified Source Record для консолидации знания")
+    if "Knowledge Consolidation" in knowledge and has_unlinked_needs_check_marker(knowledge):
+        append_finding(findings, "unlinked-needs-check", "error", "blocks knowledge-consolidation", "Knowledge.md", "Нужно проверить", "свяжите sensitive claim с SRC-* или исключите его из консолидации")
     if "Knowledge Consolidation" in knowledge:
         if not re.search(r"(?:PA-|Q-|W-|SRC-)", knowledge):
             append_finding(findings, "missing-consolidation-trace", "error", "blocks knowledge-consolidation", "Knowledge.md", "Knowledge Consolidation", "добавьте trace к Topic Workspace evidence")

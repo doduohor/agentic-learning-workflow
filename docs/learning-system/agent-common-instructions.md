@@ -49,7 +49,8 @@ owner file и отсутствие конфликта с другим агент
 
 Для version-sensitive, application-sensitive, production, security,
 protocol-semantics и tooling-behavior claims сначала смотрите
-[workflow Source Check](../wayfinder/decisions/09-design-source-verification-workflow.md).
+[workflow Source Check](source-verification-workflow.md) и
+[принятое решение](../wayfinder/decisions/09-design-source-verification-workflow.md).
 Если подтверждения нет, пишите `needs-check` в `Sources.md` и `Нужно проверить`
 в связанных артефактах. Такой claim не используется для production-ready,
 Completion Evidence, снятия blocker Weakness, Card Promotion или Knowledge
