@@ -43,6 +43,25 @@ OWNED_FIELDS = (
     "Block Status", "Статус блока", "Mastery Level", "Уровень освоения",
 )
 
+ACCEPTED_VALUES = {
+    "topic-state": {"intake", "diagnosing", "planned", "learning", "practicing", "reviewing", "completed", "paused"},
+    "mastery": {"recognition", "recall", "application", "transfer", "production-ready", "stable"},
+    "block-status": {"not-started", "active", "blocked", "ready-for-review", "stable", "deferred"},
+    "practice-result": {"unchecked", "passed", "partial", "failed", "rework-needed"},
+    "question-type": {"recall", "practice", "interview", "debugging", "design-choice", "card-candidate"},
+    "question-state": {"draft", "active", "answered", "failed", "promoted", "archived", "rejected"},
+    "card-status": {"none", "candidate", "rejected", "promoted"},
+    "weakness-type": {"gap", "misconception", "fragile-skill", "application-blind-spot"},
+    "weakness-severity": {"minor", "major", "blocker"},
+    "weakness-status": {"open", "repairing", "retest-needed", "resolved", "archived"},
+    "repetition-target": {"Question", "Block", "Weakness"},
+    "repetition-action": {"recall", "explain", "apply", "debug", "transfer"},
+    "repetition-result": {"scheduled", "passed", "partial", "failed", "missed"},
+    "sensitivity": {"version-sensitive", "application-sensitive", "production", "security", "tooling-behavior", "protocol-semantics", "durable-concept"},
+    "authority": {"official-docs", "spec-rfc", "release-notes", "vendor-blog", "engineering-article", "community-discussion", "course-book"},
+    "source-result": {"verified", "rejected", "needs-check", "superseded"},
+}
+
 
 @dataclass(frozen=True)
 class Finding:
@@ -177,6 +196,120 @@ def validate_owner_invariants(files: dict[str, str], findings: list[Finding]) ->
             append_finding(findings, "owner-violation", "error", "blocks handoff", name, "Weakness Status", "перенесите состояние слабого места в Weaknesses.md")
 
 
+def record_sections(text: str, kind: str) -> Iterable[tuple[str, str]]:
+    pattern = ID_PATTERNS[kind].pattern[:-1]
+    for match in re.finditer(rf"^###\s+({pattern})\s+-.*?(?=^###\s+|\Z)", text, flags=re.MULTILINE | re.DOTALL):
+        yield match.group(1), match.group(0)
+
+
+def field_value(section: str, *labels: str) -> str | None:
+    alternatives = "|".join(re.escape(label) for label in labels)
+    match = re.search(rf"(?:{alternatives})[^\n`]*`([^`]+)`", section, flags=re.IGNORECASE)
+    return match.group(1).strip() if match else None
+
+
+def validate_value(findings: list[Finding], file: str, entity: str, value: str | None, kind: str, field: str) -> None:
+    if value is None:
+        append_finding(findings, "missing-required-field", "error", "blocks handoff", file, entity, f"добавьте поле {field}")
+    elif value not in ACCEPTED_VALUES[kind]:
+        append_finding(findings, "invalid-value", "error", "blocks handoff", file, entity, f"укажите допустимое значение {field}: " + ", ".join(sorted(ACCEPTED_VALUES[kind])))
+
+
+def validate_accepted_values(files: dict[str, str], findings: list[Finding]) -> None:
+    goal = files.get("Goal.md", "")
+    validate_value(findings, "Goal.md", "Topic State", field_value(goal, "Topic State", "Состояние темы"), "topic-state", "Topic State")
+    for match in re.finditer(r"\|\s*`(B\d{2})`[^\n]*?\|\s*`(?:required|optional)`\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|", goal):
+        validate_value(findings, "Goal.md", match.group(1), match.group(2), "mastery", "Mastery Level")
+        validate_value(findings, "Goal.md", match.group(1), match.group(3), "block-status", "Block Status")
+    specifications = {
+        "Practice.md": ("PA", (("practice-result", ("Result", "Результат")),)),
+        "Questions.md": ("Q", (("question-type", ("Question Type", "Тип вопроса")), ("question-state", ("Question State", "Состояние вопроса")), ("card-status", ("Card Candidate status", "Статус (Status)")))),
+        "Weaknesses.md": ("W", (("weakness-type", ("Type", "Тип")), ("weakness-severity", ("Severity", "Серьезность")), ("weakness-status", ("Weakness Status", "Статус (Status)")))),
+        "RepetitionLog.md": ("REP", (("repetition-target", ("Target Type", "Тип цели")), ("repetition-action", ("Action", "Действие")), ("repetition-result", ("Repetition Result", "Результат")))),
+        "Sources.md": ("SRC", (("sensitivity", ("Sensitivity", "Чувствительность")), ("authority", ("Authority Type", "Тип авторитетности")), ("source-result", ("Source Check Result", "Результат (Result)")))),
+    }
+    for name, (kind, rules) in specifications.items():
+        for entity, section in record_sections(files.get(name, ""), kind):
+            for value_kind, labels in rules:
+                validate_value(findings, name, entity, field_value(section, *labels), value_kind, labels[0])
+
+
+def validate_weaknesses(files: dict[str, str], findings: list[Finding]) -> None:
+    goal = files.get("Goal.md", "")
+    text = files.get("Weaknesses.md", "")
+    for weakness_id, section in record_sections(text, "W"):
+        severity = field_value(section, "Severity", "Серьезность")
+        status = field_value(section, "Weakness Status", "Статус (Status)")
+        has_evidence = bool(re.search(r"####\s+(?:Evidence|Доказательство).*?(?:PA-|Q-|REP-|interview)", section, re.DOTALL | re.IGNORECASE))
+        if not has_evidence:
+            append_finding(findings, "missing-weakness-evidence", "error", "blocks handoff", "Weaknesses.md", weakness_id, "добавьте ссылку на Practice Attempt, Question, Repetition или interview answer")
+        if severity in {"major", "blocker"} and status in {"open", "repairing", "retest-needed"} and not re.search(r"Repair Action[^\n]*:\s*(?!-\s*$).+|Действие.*:\s*(?!-\s*$).+", section):
+            append_finding(findings, "missing-repair-action", "error", "blocks handoff", "Weaknesses.md", weakness_id, "добавьте Repair Action для открытого major/blocker Weakness")
+        if status == "resolved" and not re.search(r"Resolution Evidence[^\n]*:\s*(?!-\s*$).+|Доказательство исправления.*:\s*(?!-\s*$).+", section):
+            append_finding(findings, "missing-resolution-evidence", "error", "blocks handoff", "Weaknesses.md", weakness_id, "добавьте Resolution Evidence")
+        if severity == "blocker" and status in {"open", "repairing", "retest-needed"} and weakness_id not in goal:
+            append_finding(findings, "missing-active-weakness", "error", "blocks completed", "Goal.md", weakness_id, "добавьте открытое blocker Weakness в Active Weakness Summary")
+
+
+def validate_repetitions(files: dict[str, str], findings: list[Finding]) -> None:
+    records = record_ids_by_kind(files)
+    for repetition_id, section in record_sections(files.get("RepetitionLog.md", ""), "REP"):
+        target_type = field_value(section, "Target Type", "Тип цели")
+        result = field_value(section, "Repetition Result", "Результат")
+        target_ids = {kind: set(re.findall(pattern.pattern[:-1], section)) for kind, pattern in ID_PATTERNS.items()}
+        expected = {"Question": "Q", "Block": "B", "Weakness": "W"}.get(target_type or "")
+        if expected and not target_ids[expected]:
+            append_finding(findings, "invalid-repetition-target", "error", "blocks handoff", "RepetitionLog.md", repetition_id, f"свяжите Target Type {target_type} с существующим {expected}-ID")
+        if expected and any(target_ids[kind] for kind in {"Q", "B", "W"} - {expected}):
+            append_finding(findings, "invalid-repetition-target", "error", "blocks handoff", "RepetitionLog.md", repetition_id, "Target должен соответствовать Target Type")
+        completed = field_value(section, "Completed At", "Выполнено в")
+        if result == "scheduled" and completed not in {None, "-"}:
+            append_finding(findings, "invalid-repetition-completion", "error", "blocks handoff", "RepetitionLog.md", repetition_id, "scheduled repetition не имеет Completed At")
+        if result in {"passed", "partial", "failed", "missed"} and completed in {None, "-"}:
+            append_finding(findings, "missing-repetition-completion", "warning", "does not block", "RepetitionLog.md", repetition_id, "добавьте Completed At или объяснение")
+        if result in {"partial", "failed"} and not re.search(r"Failure Analysis|Анализ провала", section):
+            append_finding(findings, "missing-failure-analysis", "warning", "does not block", "RepetitionLog.md", repetition_id, "добавьте Failure Analysis")
+        if result == "failed" and not target_ids["W"]:
+            append_finding(findings, "unlinked-repetition-failure", "warning", "blocks completed", "RepetitionLog.md", repetition_id, "свяжите учебную проблему с W-* или явно объясните отсутствие Weakness")
+
+
+def validate_sources(files: dict[str, str], findings: list[Finding]) -> None:
+    sources = files.get("Sources.md", "")
+    for source_id, section in source_sections(sources):
+        result = field_value(section, "Source Check Result", "Результат (Result)")
+        if result == "superseded" and not re.search(r"(?:Notes|Заметки|Next Check|Следующая проверка).*?(?!-\s*$).+", section, re.DOTALL):
+            append_finding(findings, "missing-superseded-followup", "warning", "does not block", "Sources.md", source_id, "укажите заменяющий источник или Next Check")
+
+
+def validate_sessions(workspace: Path, files: dict[str, str], findings: list[Finding]) -> None:
+    sessions = workspace / "sessions"
+    records = record_ids_by_kind(files)
+    for archive in sessions.rglob("*.md") if sessions.is_dir() else ():
+        archive_path = str(archive.relative_to(workspace))
+        if archive.parent != sessions or not re.fullmatch(r"\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*\.md", archive.name):
+            append_finding(findings, "invalid-session-path", "error", "blocks handoff", str(archive.relative_to(workspace)), archive.name, "используйте sessions/YYYY-MM-DD-<short-slug>.md")
+        text = archive.read_text(encoding="utf-8")
+        if "../Goal.md" not in text:
+            append_finding(findings, "missing-archive-topic-link", "error", "blocks handoff", str(archive.relative_to(workspace)), "../Goal.md", "добавьте ссылку на Topic через ../Goal.md")
+        if not any(re.search(pattern.pattern[:-1], text) for pattern in ID_PATTERNS.values()):
+            append_finding(findings, "missing-archive-entity-link", "error", "blocks handoff", str(archive.relative_to(workspace)), "Entity Reference", "добавьте ссылку на PA/Q/W/REP/SRC/B сущность")
+        for kind, pattern in ID_PATTERNS.items():
+            for entity in set(re.findall(pattern.pattern[:-1], text)):
+                if entity not in records[kind]:
+                    append_finding(findings, "missing-archive-entity", "error", "blocks handoff", str(archive.relative_to(workspace)), entity, "свяжите archive с существующей основной сущностью")
+        for _, target in re.findall(r"\[([^\]]+)\]\(([^)]+)\)", text):
+            target_path = target.partition("#")[0]
+            if target_path.startswith("artifacts/") and not (archive.parent / target_path).is_file():
+                append_finding(findings, "missing-companion-artifact", "error", "blocks handoff", archive_path, target_path, "добавьте companion artifact или исправьте ссылку")
+    for name, text in files.items():
+        for _, target in re.findall(r"\[([^\]]+)\]\(([^)]+)\)", text):
+            target_path = target.partition("#")[0]
+            if target_path.startswith("sessions/") and not (workspace / target_path).is_file():
+                append_finding(findings, "missing-session-archive", "error", "blocks handoff", name, target_path, "исправьте ссылку на существующий archive")
+            if target_path and (target_path.startswith("artifacts/") or target_path.startswith("sessions/")) and not (workspace / target_path).is_file():
+                append_finding(findings, "missing-companion-artifact", "error", "blocks handoff", name, target_path, "добавьте companion artifact или исправьте ссылку")
+
+
 def question_sections(text: str) -> Iterable[tuple[str, str]]:
     for match in re.finditer(r"^###\s+(Q-\d{8}-\d{2})\s+-.*?(?=^###\s+|\Z)", text, flags=re.MULTILINE | re.DOTALL):
         yield match.group(1), match.group(0)
@@ -211,10 +344,20 @@ def validate_gates(files: dict[str, str], findings: list[Finding]) -> None:
     production_blocks = set(re.findall(r"\|\s*`(B\d{2})`.*?\|\s*`production-ready`\s*\|", goal))
     if has_needs_check_evidence(needs_check, production_blocks):
         append_finding(findings, "needs-check-gate", "error", "blocks production-ready", "Goal.md", "SRC-* needs-check", "проверьте источник или не используйте claim для production-ready")
+    for block_id in production_blocks:
+        row = next((line for line in goal.splitlines() if f"`{block_id}`" in line and line.startswith("|")), "")
+        if "PA-" not in row or any(result in row for result in ("`unchecked`", "`failed`", "`rework-needed`")):
+            append_finding(findings, "insufficient-production-evidence", "error", "blocks production-ready", "Goal.md", block_id, "добавьте applied/transfer Practice Attempt с приемлемым результатом")
+        if any(block_id in section and field_value(section, "Severity", "Серьезность") == "blocker" and field_value(section, "Weakness Status", "Статус (Status)") in {"open", "repairing", "retest-needed"} for _, section in record_sections(files.get("Weaknesses.md", ""), "W")):
+            append_finding(findings, "open-blocker-weakness", "error", "blocks production-ready", "Weaknesses.md", block_id, "закройте blocker Weakness перед production-ready")
     if "Состояние темы (Topic State): `completed`" in goal:
         completion_sources = set(re.findall(ID_PATTERNS["SRC"].pattern[:-1], goal))
         if has_needs_check_evidence(needs_check, completion_sources):
             append_finding(findings, "needs-check-gate", "error", "blocks completed", "Goal.md", "SRC-* needs-check", "проверьте обязательный источник до completed")
+        if any(field_value(section, "Severity", "Серьезность") == "blocker" and field_value(section, "Weakness Status", "Статус (Status)") in {"open", "repairing", "retest-needed"} for _, section in record_sections(files.get("Weaknesses.md", ""), "W")):
+            append_finding(findings, "open-blocker-weakness", "error", "blocks completed", "Weaknesses.md", "W-*", "закройте blocker Weakness перед completed")
+        if any(field_value(section, "Source Check Result", "Результат (Result)") == "rejected" and source_id in goal for source_id, section in source_sections(sources)):
+            append_finding(findings, "rejected-source-gate", "error", "blocks completed", "Goal.md", "SRC-* rejected", "замените или удалите rejected Source из Completion Criteria")
         for required in re.findall(r"\|\s*`(B\d{2})`.*?\|\s*`required`\s*\|\s*`([^`]+)`", goal):
             if required[1] != "stable":
                 append_finding(findings, "incomplete-required-block", "error", "blocks completed", "Goal.md", required[0], "доведите required Block до stable")
@@ -245,6 +388,11 @@ def validate_gates(files: dict[str, str], findings: list[Finding]) -> None:
     knowledge_sources = set(re.findall(ID_PATTERNS["SRC"].pattern[:-1], knowledge))
     if has_needs_check_evidence(needs_check, knowledge_sources) and "Knowledge Consolidation" in knowledge:
         append_finding(findings, "needs-check-gate", "error", "blocks knowledge-consolidation", "Knowledge.md", "SRC-* needs-check", "проверьте источник до консолидации знания")
+    if "Knowledge Consolidation" in knowledge:
+        if not re.search(r"(?:PA-|Q-|W-|SRC-)", knowledge):
+            append_finding(findings, "missing-consolidation-trace", "error", "blocks knowledge-consolidation", "Knowledge.md", "Knowledge Consolidation", "добавьте trace к Topic Workspace evidence")
+        if re.search(r"(?:raw session|Session Notes|copied source dump|archive copy)", knowledge, re.IGNORECASE):
+            append_finding(findings, "raw-knowledge-consolidation", "error", "blocks knowledge-consolidation", "Knowledge.md", "Knowledge Consolidation", "перенесите только curated Knowledge, без raw/archive/source dump")
 
 
 def validate_index(index: Path, workspace: Path, goal: str, findings: list[Finding]) -> None:
@@ -258,10 +406,31 @@ def validate_index(index: Path, workspace: Path, goal: str, findings: list[Findi
         for line in text.splitlines()
         if line.startswith("|") and "Topic Workspace" not in line and "---" not in line
     ]
+    topic_names = {row[2].strip() for row in rows if len(row) > 2}
     if len(rows) != len({row[5] for row in rows if len(row) > 5}):
         append_finding(findings, "duplicate-index-workspace", "error", "blocks handoff", str(index), "Topic Workspace", "оставьте одну строку на Topic Workspace")
     if len(rows) != len({row[3] for row in rows if len(row) > 3}):
         append_finding(findings, "duplicate-index-slug", "error", "blocks handoff", str(index), "Stable Slug", "сделайте Stable Slug уникальным")
+    for row in rows:
+        if len(row) < 9:
+            append_finding(findings, "invalid-index-row", "error", "blocks handoff", str(index), "Topics", "добавьте все обязательные столбцы Topic Index")
+            continue
+        topic, subject, slug, workspace_value, goal_cell, parent, related = row[2], row[1], row[3].strip("`"), row[5].strip("`"), row[6], row[7].strip(), row[8].strip()
+        # ADR 08 explicitly preserves the prototype's short folder slug while
+        # Goal.md remains the source of truth for the full Stable Slug.
+        expected = f"topics/{subject.lower()}/{workspace_value.split('/')[-1]}"
+        if not re.fullmatch(r"topics/[^/]+/[^/]+", workspace_value) or workspace_value != expected:
+            append_finding(findings, "invalid-index-workspace", "error", "blocks handoff", str(index), workspace_value, "используйте путь topics/<subject>/<stable-slug>")
+        workspace_dir = index.parent.parent / workspace_value
+        if not workspace_dir.is_dir():
+            append_finding(findings, "missing-index-workspace", "error", "blocks handoff", str(index), workspace_value, "создайте Topic Workspace или исправьте строку Index")
+        link = re.search(r"\]\(([^)]+)\)", goal_cell)
+        if not link or not (index.parent / link.group(1)).is_file():
+            append_finding(findings, "missing-index-goal", "error", "blocks handoff", str(index), topic, "исправьте ссылку Goal на существующий Goal.md")
+        if parent != "-" and parent not in topic_names:
+            append_finding(findings, "missing-parent-topic", "error", "blocks handoff", str(index), parent, "укажите существующую Topic в Parent Topic или -")
+        if related != "-" and workspace_value and sum(1 for candidate in rows if len(candidate) > 5 and candidate[5].strip("`") == workspace_value) > 1:
+            append_finding(findings, "related-subject-duplicate-workspace", "error", "blocks handoff", str(index), workspace_value, "оставьте один physical Topic Workspace и перечислите Related Subjects в той же строке")
     relevant = [row for row in rows if len(row) > 5 and workspace.name in row[5]]
     if not relevant:
         append_finding(findings, "index-workspace-missing", "warning", "does not block", str(index), workspace_rel, "добавьте строку Topic Workspace в Index")
@@ -303,6 +472,11 @@ def run_checker(index: Path, workspace: Path) -> list[Finding]:
     validate_ids(files, findings)
     validate_entity_references(files, findings)
     validate_owner_invariants(files, findings)
+    validate_accepted_values(files, findings)
+    validate_weaknesses(files, findings)
+    validate_repetitions(files, findings)
+    validate_sources(files, findings)
+    validate_sessions(workspace, files, findings)
     validate_gates(files, findings)
     validate_index(index, workspace, files["Goal.md"], findings)
     return findings

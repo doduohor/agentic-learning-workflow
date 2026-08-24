@@ -16,7 +16,7 @@ class TopicWorkspaceCheckerTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.root = Path(self.temp_dir.name)
-        self.workspace = self.root / "topics" / "rabbitmq" / "retry"
+        self.workspace = self.root / "topics" / "rabbitmq" / "rabbitmq-retry-without-idempotency"
         shutil.copytree(
             REPO_ROOT / "topics" / "rabbitmq" / "retry-without-idempotency",
             self.workspace,
@@ -27,7 +27,7 @@ class TopicWorkspaceCheckerTests(unittest.TestCase):
             "| Learning Profile | Subject | Topic | Stable Slug | Topic State | Topic Workspace | Goal | Parent Topic | Related Subjects |\n"
             "|---|---|---|---|---|---|---|---|---|\n"
             "| profile | rabbitmq | retry | `rabbitmq-retry-without-idempotency` | `learning` | "
-            "`topics/rabbitmq/retry` | [Goal.md](rabbitmq/retry/Goal.md) | - | - |\n",
+            "`topics/rabbitmq/rabbitmq-retry-without-idempotency` | [Goal.md](rabbitmq/rabbitmq-retry-without-idempotency/Goal.md) | - | - |\n",
             encoding="utf-8",
         )
 
@@ -195,6 +195,77 @@ class TopicWorkspaceCheckerTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 1)
         self.assertIn("[invalid-id] error; blocks handoff; файл:", result.stdout)
+
+    def test_reports_invalid_accepted_value_in_practice_record(self) -> None:
+        practice = self.workspace / "Practice.md"
+        practice.write_text(
+            practice.read_text(encoding="utf-8").replace("Результат (Result): `unchecked`", "Результат (Result): `unknown`"),
+            encoding="utf-8",
+        )
+
+        findings = self.check()
+
+        self.assertTrue(any(finding.id == "invalid-value" and finding.file == "Practice.md" for finding in findings))
+
+    def test_reports_open_blocker_missing_from_goal_summary(self) -> None:
+        weaknesses = self.workspace / "Weaknesses.md"
+        weaknesses.write_text(
+            weaknesses.read_text(encoding="utf-8").replace(
+                "Evidence-backed Weakness Records пока отсутствуют.",
+                """### W-20260824-01 - missing transaction boundary
+
+- ID слабого места (Weakness ID): `W-20260824-01`
+- Тип (Type): `gap`
+- Серьезность (Severity): `blocker`
+- Статус (Status): `open`
+- Связанный блок (Linked Block): [B01: retry mental model](Goal.md#b01---retry-mental-model)
+
+#### Evidence
+
+- [PA-20260824-01: retry safety sketch](Practice.md#pa-20260824-01---retry-safety-sketch)
+
+#### Repair Action и ретест (Retest)
+
+- Repair Action: добавить разбор транзакционной границы
+- Resolution Evidence: -""",
+            ),
+            encoding="utf-8",
+        )
+
+        findings = self.check()
+
+        self.assertTrue(any(finding.id == "missing-active-weakness" for finding in findings))
+
+    def test_reports_invalid_session_path_and_missing_archive_topic_link(self) -> None:
+        sessions = self.workspace / "sessions"
+        sessions.mkdir()
+        (sessions / "notes.md").write_text("# Notes\n\n[B01](#b01---retry-mental-model)\n", encoding="utf-8")
+
+        findings = self.check()
+
+        self.assertTrue(any(finding.id == "invalid-session-path" for finding in findings))
+        self.assertTrue(any(finding.id == "missing-archive-topic-link" for finding in findings))
+
+    def test_reports_missing_companion_artifact(self) -> None:
+        practice = self.workspace / "Practice.md"
+        practice.write_text(
+            practice.read_text(encoding="utf-8").replace("Артефакты (Artifacts): -", "Артефакты (Artifacts): [diagram](artifacts/retry.png)"),
+            encoding="utf-8",
+        )
+
+        findings = self.check()
+
+        self.assertTrue(any(finding.id == "missing-companion-artifact" for finding in findings))
+
+    def test_reports_missing_parent_topic_for_any_index_row(self) -> None:
+        self.index.write_text(
+            self.index.read_text(encoding="utf-8").replace("| - | - |", "| unknown parent | - |"),
+            encoding="utf-8",
+        )
+
+        findings = self.check()
+
+        self.assertTrue(any(finding.id == "missing-parent-topic" for finding in findings))
 
 
 if __name__ == "__main__":
