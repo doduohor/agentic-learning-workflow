@@ -10,9 +10,12 @@ Knowledge Consolidation decision и не подключается к личны�
 1. Learning Orchestrator собирает `WriteRequest` из owner artifacts и уже
    принятых решений.
 2. `WriteAutomation.prepare()` формирует human-readable dry-run preview. В нём
-   есть source entity, target, action, proposed content, Duplicate/Source Check
-   summaries, trace, ожидаемое Markdown-изменение, availability и recovery
-   plan. Этот шаг не пишет никуда.
+   всегда есть Topic Workspace, source entity, target/type, action, proposed
+   content, Duplicate/Source Check summaries, Card или Knowledge trace,
+   ожидаемое Markdown-изменение, availability и recovery plan. Для Anki также
+   обязательны deck, note type, fields и tags; для Obsidian — target path, note
+   и section. Свободный `target_description` остаётся пояснением, но не заменяет
+   эти поля. Этот шаг не пишет никуда.
 3. Пользователь явно подтверждает именно показанный preview. Если текст,
    target или Duplicate Check изменился, нужен новый preview и approval.
 4. Только затем Orchestrator вызывает `execute(preview, approved=True)` с
@@ -50,8 +53,12 @@ owner file:
 - Anki/Card Promotion — `Questions.md`;
 - Obsidian/Knowledge Consolidation — `Knowledge.md`.
 
-Outcome содержит target identity и details, Duplicate/Source Check summaries,
-source trace/evidence, action, result, time и reason для `replace`/`merge`.
+Outcome содержит target identity и structured details, Duplicate/Source Check
+summaries, source trace/evidence, action, result, time и reason для
+`replace`/`merge`. Anki outcome фиксирует deck, note type, fields, tags, Anki
+Note ID и доступные Anki Card IDs; Obsidian outcome — path, note, section,
+linked evidence и write result. `pending`, `unavailable`, `failed`, `partial`
+и `no-op` рендерятся с собственным состоянием, без ложной отметки успеха.
 
 `Goal.md` не получает тело write outcome; Orchestrator может отдельно добавить
 в него краткую ссылку, только если меняются next action или Completion

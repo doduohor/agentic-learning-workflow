@@ -53,3 +53,10 @@
 - Dry-run preview: `-`
 - User approval: `-`
 - Anki write outcome: `-`
+
+#### Anki write trace
+
+- Target: deck, note type, fields и tags или `-`
+- Anki Note ID: `-`
+- Anki Card IDs: `-`
+- Change reason (`replace`/`merge`): `-`

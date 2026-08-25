@@ -47,7 +47,9 @@ class GateVerification:
 class WriteRequest:
     """Вход Orchestrator после Card Promotion или Knowledge Consolidation."""
 
+    topic_workspace: str
     target: str
+    target_type: str
     action: str
     source_entity: str
     target_description: str
@@ -58,6 +60,14 @@ class WriteRequest:
     expected_markdown_updates: str
     recovery_plan: str
     gates: GateSnapshot
+    anki_deck: str | None = None
+    anki_note_type: str | None = None
+    anki_fields: str | None = None
+    anki_tags: str | None = None
+    obsidian_target_path: str | None = None
+    obsidian_note: str | None = None
+    obsidian_section: str | None = None
+    linked_evidence: str | None = None
     existing_target_identity: str | None = None
     external_target_found_without_trace: bool = False
     previous_proposed_content: str | None = None
@@ -85,10 +95,13 @@ class WritePreview:
             [
                 "## Dry-run preview",
                 "",
+                f"- Topic Workspace: `{request.topic_workspace}`",
                 f"- Source entity: `{request.source_entity}`",
                 f"- Target: `{request.target}`",
+                f"- Target type: `{request.target_type}`",
                 f"- Action: `{request.action}`",
                 f"- Target details: {request.target_description}",
+                *self._target_details(request),
                 f"- Target availability: `{'available' if self.target_available else 'unavailable'}`",
                 f"- Preview state: `{self.state}`",
                 "- Proposed content:",
@@ -106,12 +119,27 @@ class WritePreview:
             ]
         )
 
+    @staticmethod
+    def _target_details(request: WriteRequest) -> list[str]:
+        if request.target == "anki":
+            return [
+                f"- Anki deck: `{request.anki_deck}`", f"- Anki note type: `{request.anki_note_type}`",
+                f"- Anki fields: `{request.anki_fields}`", f"- Anki tags: `{request.anki_tags}`",
+            ]
+        return [
+            f"- Obsidian path: `{request.obsidian_target_path}`", f"- Obsidian note: `{request.obsidian_note}`",
+            f"- Obsidian section: `{request.obsidian_section}`",
+        ]
+
 
 @dataclass(frozen=True)
 class WriteOutcome:
     state: str
     action: str
+    target: str
+    target_type: str
     owner_artifact: str
+    topic_workspace: str
     source_entity: str
     external_target_identity: str | None
     next_action: str
@@ -120,23 +148,70 @@ class WriteOutcome:
     source_check_summary: str
     trace: str
     change_reason: str | None
+    anki_deck: str | None
+    anki_note_type: str | None
+    anki_fields: str | None
+    anki_tags: str | None
+    anki_note_id: str | None
+    anki_card_ids: tuple[str, ...]
+    obsidian_target_path: str | None
+    obsidian_note: str | None
+    obsidian_section: str | None
+    linked_evidence: str | None
+    expected_markdown_updates: str
+    recovery_plan: str
+    target_available: bool | None
 
     def to_markdown(self) -> str:
         target = self.external_target_identity or "-"
         return "\n".join(
             [
                 f"- Write state: `{self.state}`",
+                f"- Topic Workspace: `{self.topic_workspace}`",
                 f"- Write action: `{self.action}`",
+                f"- Target: `{self.target}` ({self.target_type})",
                 f"- Source entity: `{self.source_entity}`",
                 f"- External target: `{target}`",
                 f"- Target details: {self.target_description}",
                 f"- Duplicate Check: {self.duplicate_check_summary}",
                 f"- Source Check: {self.source_check_summary}",
                 f"- Trace/evidence: {self.trace}",
+                f"- Linked evidence: {self.linked_evidence or '-'}",
+                f"- Expected Markdown updates: {self.expected_markdown_updates}",
+                f"- Target availability: `{self._availability()}`",
+                f"- Recovery plan: {self.recovery_plan}",
                 f"- Change reason: {self.change_reason or '-'}",
+                *self._target_details(),
                 f"- Next action: {self.next_action}",
             ]
         )
+
+    def _target_details(self) -> list[str]:
+        if self.target == "anki":
+            return [
+                f"- Anki deck: `{self.anki_deck}`", f"- Anki note type: `{self.anki_note_type}`",
+                f"- Anki fields: `{self.anki_fields}`", f"- Anki tags: `{self.anki_tags}`",
+                f"- Anki Note ID: `{self.anki_note_id or '-'}`",
+                f"- Anki Card IDs: `{', '.join(self.anki_card_ids) or '-'}`",
+            ]
+        return [
+            f"- Obsidian path: `{self.obsidian_target_path}`", f"- Obsidian note: `{self.obsidian_note}`",
+            f"- Obsidian section: `{self.obsidian_section}`",
+        ]
+
+    def _availability(self) -> str:
+        if self.target_available is None:
+            return "unknown"
+        return "available" if self.target_available else "unavailable"
+
+
+@dataclass(frozen=True)
+class ExternalWriteResult:
+    """Identity returned by an explicit adapter; card IDs are optional."""
+
+    target_identity: str
+    anki_note_id: str | None = None
+    anki_card_ids: tuple[str, ...] = ()
 
 
 class ExternalWriteTarget(Protocol):
@@ -148,7 +223,7 @@ class ExternalWriteTarget(Protocol):
 
     def preview_revision(self, request: WriteRequest) -> str | None: ...
 
-    def write(self, request: WriteRequest) -> str: ...
+    def write(self, request: WriteRequest) -> str | ExternalWriteResult: ...
 
 
 class TraceWriter(Protocol):
@@ -331,12 +406,15 @@ class WriteAutomation:
         if self._revision(target, request) != preview.target_revision:
             return self._record_pending(request, "Target изменился после dry-run; подготовьте новый preview и approval.")
         try:
-            target_identity = target.write(request)
+            result = target.write(request)
         except Exception as error:
-            outcome = self._outcome(request, "failed", None, f"Внешняя запись не выполнена: {error}. Повторите preview после проверки target.")
+            outcome = self._outcome(request, "failed", None, f"Внешняя запись не выполнена: {error}. Повторите preview после проверки target.", target_available=True)
             self._record(outcome)
             return outcome
-        outcome = self._outcome(request, "succeeded", target_identity, "Внешняя запись и trace завершены.")
+        target_identity, anki_note_id, anki_card_ids = self._result_details(request, result)
+        outcome = self._outcome(
+            request, "succeeded", target_identity, "Внешняя запись и trace завершены.", anki_note_id, anki_card_ids, True
+        )
         try:
             self._record(outcome)
         except Exception:
@@ -345,6 +423,9 @@ class WriteAutomation:
                 "partial",
                 target_identity,
                 "Внешняя запись выполнена, но trace не обновлён; подготовьте reconciliation preview.",
+                anki_note_id,
+                anki_card_ids,
+                True,
             )
         return outcome
 
@@ -413,6 +494,13 @@ class WriteAutomation:
         actions = ANKI_ACTIONS if request.target == "anki" else OBSIDIAN_ACTIONS
         if request.action not in actions:
             raise ValueError(f"Действие `{request.action}` недопустимо для {request.target}.")
+        target_fields = (
+            (request.anki_deck, request.anki_note_type, request.anki_fields, request.anki_tags)
+            if request.target == "anki"
+            else (request.obsidian_target_path, request.obsidian_note, request.obsidian_section)
+        )
+        if not request.topic_workspace or not request.target_type or not all(target_fields):
+            raise ValueError("Для preview нужны Topic Workspace и полные structured target details.")
 
     @staticmethod
     def _gate_blockers(request: WriteRequest, gates: GateSnapshot | None = None) -> list[str]:
@@ -439,11 +527,30 @@ class WriteAutomation:
         return blockers
 
     @staticmethod
-    def _outcome(request: WriteRequest, state: str, target_identity: str | None, next_action: str) -> WriteOutcome:
+    def _result_details(
+        request: WriteRequest, result: str | ExternalWriteResult
+    ) -> tuple[str, str | None, tuple[str, ...]]:
+        if isinstance(result, ExternalWriteResult):
+            return result.target_identity, result.anki_note_id, result.anki_card_ids
+        return result, result if request.target == "anki" else None, ()
+
+    @staticmethod
+    def _outcome(
+        request: WriteRequest,
+        state: str,
+        target_identity: str | None,
+        next_action: str,
+        anki_note_id: str | None = None,
+        anki_card_ids: tuple[str, ...] = (),
+        target_available: bool | None = None,
+    ) -> WriteOutcome:
         return WriteOutcome(
             state,
             request.action,
+            request.target,
+            request.target_type,
             OWNER_ARTIFACTS[request.target],
+            request.topic_workspace,
             request.source_entity,
             target_identity,
             next_action,
@@ -452,10 +559,24 @@ class WriteAutomation:
             request.source_check_summary,
             request.trace,
             request.change_reason,
+            request.anki_deck,
+            request.anki_note_type,
+            request.anki_fields,
+            request.anki_tags,
+            anki_note_id if request.target == "anki" and state in {"succeeded", "partial"} else None,
+            anki_card_ids if request.target == "anki" and state in {"succeeded", "partial"} else (),
+            request.obsidian_target_path,
+            request.obsidian_note,
+            request.obsidian_section,
+            request.linked_evidence,
+            request.expected_markdown_updates,
+            request.recovery_plan,
+            target_available,
         )
 
     def _record_pending(self, request: WriteRequest, next_action: str) -> WriteOutcome:
-        outcome = self._outcome(request, "pending", None, next_action)
+        target = self.targets.get(request.target, UnavailableTarget())
+        outcome = self._outcome(request, "pending", None, next_action, target_available=self._available(target))
         self._record(outcome)
         return outcome
 

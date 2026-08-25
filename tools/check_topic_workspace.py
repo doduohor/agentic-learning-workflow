@@ -38,6 +38,19 @@ ID_KINDS = {
     "RepetitionLog.md": "REP",
     "Sources.md": "SRC",
 }
+SIGNIFICANT_REFERENCE_FIELDS = re.compile(
+    r"^(?:Active Block|Активный блок|Linked Block|Связанный блок|Evidence|Weakness Evidence|"
+    r"Resolution Evidence|Answer/Attempt Link|Weakness Links|Source(?: Check| Links)?|Card Trace|"
+    r"Target|Used In|Где используется|Replacement|Заменяющий источник|Parent Topic|Родительская тема)"
+    r"(?:\s*\([^)]*\))?$",
+    re.IGNORECASE,
+)
+TABLE_REFERENCE_FIELDS = re.compile(
+    r"(?:evidence|доказательств|linked|связан|weakness|слаб|answer/attempt|ответ/попыт|"
+    r"target|цель|used in|где используется|source|источник|promoted knowledge|перенесенное знание|"
+    r"follow-up question|следующ.*вопрос)",
+    re.IGNORECASE,
+)
 OWNED_FIELDS = (
     "Topic State", "Состояние темы", "Active Block", "Активный блок",
     "Block Status", "Статус блока", "Mastery Level", "Уровень освоения",
@@ -182,6 +195,57 @@ def validate_entity_references(files: dict[str, str], findings: list[Finding]) -
                     )
 
 
+def validate_bare_entity_references(files: dict[str, str], findings: list[Finding]) -> None:
+    """Warn only when a cross-file relationship names an ID without its link."""
+    for name, text in files.items():
+        for line in text.splitlines():
+            if not line.startswith("- ") or "|" in line or ":" not in line:
+                continue
+            label, value = line[2:].split(":", 1)
+            if not SIGNIFICANT_REFERENCE_FIELDS.search(label) or label.strip().lower() == "id":
+                continue
+            _warn_bare_ids(findings, name, value)
+        table_headers: list[str] | None = None
+        for line in text.splitlines():
+            if not line.startswith("|"):
+                table_headers = None
+                continue
+            cells = [cell.strip() for cell in line.strip("|").split("|")]
+            if all(re.fullmatch(r":?-{3,}:?", cell) for cell in cells):
+                continue
+            if table_headers is None:
+                table_headers = cells
+                continue
+            for header, value in zip(table_headers, cells):
+                if (
+                    " id" in header.lower()
+                    or header.lower().startswith("id ")
+                    or "archive" in header.lower()
+                    or "архив" in header.lower()
+                    or "linked attempts" in header.lower()
+                    or "связанные попытки" in header.lower()
+                    or not TABLE_REFERENCE_FIELDS.search(header)
+                ):
+                    continue
+                if _is_direct_id_list(value):
+                    _warn_bare_ids(findings, name, value)
+
+
+def _warn_bare_ids(findings: list[Finding], name: str, value: str) -> None:
+    for pattern in ID_PATTERNS.values():
+        for entity_id in set(re.findall(pattern.pattern[:-1], value)):
+            if not re.search(rf"\[[^\]]*\b{re.escape(entity_id)}\b[^\]]*\]\([^)]+\)", value):
+                append_finding(
+                    findings, "bare-entity-reference", "warning", "does not block", name, entity_id,
+                    "замените bare ID на Markdown Entity Reference `[ID: краткий смысл](file.md#anchor)`",
+                )
+
+
+def _is_direct_id_list(value: str) -> bool:
+    id_patterns = "|".join(pattern.pattern[:-1] for pattern in ID_PATTERNS.values())
+    return bool(re.fullmatch(rf"\s*`?(?:{id_patterns})`?(?:\s*[,;]\s*`?(?:{id_patterns})`?)*\s*", value))
+
+
 def validate_owner_invariants(files: dict[str, str], findings: list[Finding]) -> None:
     for name, text in files.items():
         if name != "Goal.md":
@@ -300,6 +364,7 @@ def validate_sessions(workspace: Path, files: dict[str, str], findings: list[Fin
         if archive.parent != sessions or not re.fullmatch(r"\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*\.md", archive.name):
             append_finding(findings, "invalid-session-path", "error", "blocks handoff", str(archive.relative_to(workspace)), archive.name, "используйте sessions/YYYY-MM-DD-<short-slug>.md")
         text = archive.read_text(encoding="utf-8")
+        validate_bare_entity_references({archive_path: text}, findings)
         if "../Goal.md" not in text:
             append_finding(findings, "missing-archive-topic-link", "error", "blocks handoff", str(archive.relative_to(workspace)), "../Goal.md", "добавьте ссылку на Topic через ../Goal.md")
         if not any(re.search(pattern.pattern[:-1], text) for pattern in ID_PATTERNS.values()):
@@ -503,6 +568,7 @@ def run_checker(index: Path, workspace: Path) -> list[Finding]:
     validate_markdown_links(workspace, files, findings)
     validate_ids(files, findings)
     validate_entity_references(files, findings)
+    validate_bare_entity_references(files, findings)
     validate_owner_invariants(files, findings)
     validate_accepted_values(files, findings)
     validate_weaknesses(files, findings)

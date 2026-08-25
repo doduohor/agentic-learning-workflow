@@ -8,6 +8,7 @@ from pathlib import Path
 from tools.write_automation import (
     GateSnapshot,
     GateVerification,
+    ExternalWriteResult,
     InMemoryTraceWriter,
     MarkdownTraceWriter,
     WriteAutomation,
@@ -23,11 +24,13 @@ class RecordingTarget:
         existing: bool = False,
         revision: str | None = None,
         write_error: Exception | None = None,
+        write_result: str | ExternalWriteResult = "external-42",
     ) -> None:
         self.available = available
         self.existing = existing
         self.revision = revision
         self.write_error = write_error
+        self.write_result = write_result
         self.writes: list[WriteRequest] = []
 
     def is_available(self) -> bool:
@@ -43,7 +46,7 @@ class RecordingTarget:
         self.writes.append(request)
         if self.write_error:
             raise self.write_error
-        return "external-42"
+        return self.write_result
 
 
 class CurrentGateVerifier:
@@ -67,7 +70,9 @@ class FailingTraceWriter(InMemoryTraceWriter):
 class WriteAutomationTests(unittest.TestCase):
     def request(self, **changes: object) -> WriteRequest:
         values: dict[str, object] = {
+            "topic_workspace": "topics/rabbitmq/retry-without-idempotency",
             "target": "anki",
+            "target_type": "Anki note",
             "action": "add",
             "source_entity": "Q-20260824-01",
             "target_description": "deck Kotlin Backend / Basic / Front, Back, tags",
@@ -77,6 +82,13 @@ class WriteAutomationTests(unittest.TestCase):
             "trace": "Q-20260824-01 -> PA-20260824-01 -> SRC-20260824-01",
             "expected_markdown_updates": "Questions.md: Anki write outcome.",
             "recovery_plan": "При сбое сохранить pending и повторить availability check.",
+            "anki_deck": "Kotlin Backend",
+            "anki_note_type": "Basic",
+            "anki_fields": "Front, Back",
+            "anki_tags": "rabbitmq retry idempotency",
+            "obsidian_target_path": "Work/RabbitMQ.md",
+            "obsidian_note": "RabbitMQ",
+            "obsidian_section": "Retry",
             "gates": GateSnapshot(
                 checker_passed=True,
                 source_check_passed=True,
@@ -91,7 +103,7 @@ class WriteAutomationTests(unittest.TestCase):
         return WriteRequest(**values)  # type: ignore[arg-type]
 
     def test_dry_run_contains_required_context_and_never_writes(self) -> None:
-        target = RecordingTarget()
+        target = RecordingTarget(write_result=ExternalWriteResult("external-42", "note-42", ("card-100", "card-101")))
         automation = WriteAutomation(
             {"anki": target, "obsidian": RecordingTarget()}, trace_writer=InMemoryTraceWriter()
         )
@@ -103,6 +115,88 @@ class WriteAutomationTests(unittest.TestCase):
         self.assertIn("Duplicate Check", preview.to_markdown())
         self.assertIn("План восстановления", preview.to_markdown())
         self.assertEqual(target.writes, [])
+
+    def test_anki_preview_and_success_trace_include_structured_target_details_and_ids(self) -> None:
+        target = RecordingTarget(write_result=ExternalWriteResult("external-42", "note-42", ("card-100", "card-101")))
+        trace_writer = InMemoryTraceWriter()
+        automation = WriteAutomation(
+            {"anki": target, "obsidian": RecordingTarget()},
+            trace_writer=trace_writer,
+            gate_verifier=CurrentGateVerifier(),
+        )
+
+        preview = automation.prepare(self.request())
+        outcome = automation.execute(preview, approved=True)
+
+        self.assertIn("Topic Workspace: `topics/rabbitmq/retry-without-idempotency`", preview.to_markdown())
+        self.assertIn("Anki deck: `Kotlin Backend`", preview.to_markdown())
+        self.assertIn("Anki note type: `Basic`", preview.to_markdown())
+        self.assertIn("Anki fields: `Front, Back`", preview.to_markdown())
+        self.assertIn("Anki tags: `rabbitmq retry idempotency`", preview.to_markdown())
+        self.assertEqual(outcome.anki_note_id, "note-42")
+        self.assertEqual(outcome.anki_card_ids, ("card-100", "card-101"))
+        self.assertIn("Anki Note ID: `note-42`", outcome.to_markdown())
+        self.assertIn("Anki Card IDs: `card-100, card-101`", outcome.to_markdown())
+
+    def test_obsidian_preview_and_trace_include_path_note_section_and_evidence(self) -> None:
+        request = self.request(
+            target="obsidian",
+            target_type="Obsidian section",
+            action="append",
+            source_entity="Knowledge.md#b01---retry",
+            target_description="Retry explanation",
+            obsidian_target_path="Work/RabbitMQ.md",
+            obsidian_note="RabbitMQ",
+            obsidian_section="Retry",
+            linked_evidence="[PA-20260824-01](Practice.md#pa-20260824-01---retry-safety-sketch)",
+            expected_markdown_updates="Knowledge.md: Obsidian write outcome.",
+            gates=GateSnapshot(True, True, True, "knowledge-consolidation", "append", True, True),
+        )
+        trace_writer = InMemoryTraceWriter()
+        automation = WriteAutomation(
+            {"anki": RecordingTarget(), "obsidian": RecordingTarget()},
+            trace_writer=trace_writer,
+            gate_verifier=CurrentGateVerifier(),
+        )
+
+        preview = automation.prepare(request)
+        outcome = automation.execute(preview, approved=True)
+
+        self.assertIn("Obsidian path: `Work/RabbitMQ.md`", preview.to_markdown())
+        self.assertIn("Obsidian note: `RabbitMQ`", preview.to_markdown())
+        self.assertIn("Obsidian section: `Retry`", preview.to_markdown())
+        self.assertIn("Linked evidence", outcome.to_markdown())
+
+    def test_merge_preserves_reason_in_successful_trace(self) -> None:
+        request = self.request(
+            action="merge",
+            change_reason="Existing card partly duplicates the same failure mode.",
+            gates=GateSnapshot(True, True, True, "card-promotion", "merge", True, True),
+        )
+        trace_writer = InMemoryTraceWriter()
+        automation = WriteAutomation(
+            {"anki": RecordingTarget(), "obsidian": RecordingTarget()},
+            trace_writer=trace_writer,
+            gate_verifier=CurrentGateVerifier(),
+        )
+
+        outcome = automation.execute(automation.prepare(request), approved=True)
+
+        self.assertEqual(outcome.change_reason, request.change_reason)
+        self.assertIn(request.change_reason, outcome.to_markdown())
+
+    def test_unavailable_preview_has_no_success_trace(self) -> None:
+        trace_writer = InMemoryTraceWriter()
+        automation = WriteAutomation(
+            {"anki": RecordingTarget(available=False), "obsidian": RecordingTarget()},
+            trace_writer=trace_writer,
+        )
+
+        preview = automation.prepare(self.request())
+        outcome = automation.execute(preview, approved=True)
+
+        self.assertEqual(outcome.state, "pending")
+        self.assertNotIn("успеш", outcome.to_markdown().lower())
 
     def test_rejected_or_missing_approval_never_calls_production_write(self) -> None:
         target = RecordingTarget()
@@ -370,6 +464,7 @@ class WriteAutomationTests(unittest.TestCase):
             self.assertIn("Write outcome — Q-20260824-01", questions.read_text(encoding="utf-8"))
             self.assertIn("Duplicate Check", questions.read_text(encoding="utf-8"))
             self.assertIn("Trace/evidence", questions.read_text(encoding="utf-8"))
+            self.assertIn("Recovery plan", questions.read_text(encoding="utf-8"))
             self.assertEqual(
                 knowledge.read_text(encoding="utf-8"), "# Knowledge\n\n## Knowledge Consolidation Trace\n\n- Existing: yes\n"
             )

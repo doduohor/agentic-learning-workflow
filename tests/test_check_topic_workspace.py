@@ -418,6 +418,57 @@ class TopicWorkspaceCheckerTests(unittest.TestCase):
 
         self.assertTrue(any(finding.id == "missing-parent-topic" for finding in findings))
 
+    def test_warns_about_bare_id_in_significant_evidence_field_only(self) -> None:
+        practice = self.workspace / "Practice.md"
+        practice.write_text(
+            practice.read_text(encoding="utf-8").replace(
+                "- Связанный блок (Linked Block): [B01: retry mental model](Goal.md#b01---retry-mental-model)",
+                "- Связанный блок (Linked Block): B01",
+            ),
+            encoding="utf-8",
+        )
+
+        findings = self.check()
+
+        bare = [finding for finding in findings if finding.id == "bare-entity-reference"]
+        self.assertEqual(len(bare), 1)
+        self.assertEqual(bare[0].severity, "warning")
+        self.assertEqual(bare[0].gate_impact, "does not block")
+        self.assertIn("Markdown Entity Reference", bare[0].explanation)
+
+    def test_accepts_markdown_entity_reference_in_significant_evidence_field(self) -> None:
+        findings = self.check()
+
+        self.assertFalse(any(finding.id == "bare-entity-reference" for finding in findings))
+
+    def test_warns_about_bare_id_in_archive_evidence_field(self) -> None:
+        sessions = self.workspace / "sessions"
+        sessions.mkdir()
+        (sessions / "2026-08-24-retry.md").write_text(
+            "# Session\n\n- Topic: [Goal](../Goal.md)\n- Evidence: PA-20260824-01\n",
+            encoding="utf-8",
+        )
+
+        findings = self.check()
+
+        self.assertTrue(any(
+            finding.id == "bare-entity-reference" and finding.file == "sessions/2026-08-24-retry.md"
+            for finding in findings
+        ))
+
+    def test_warns_about_bare_id_in_significant_table_cell(self) -> None:
+        questions = self.workspace / "Questions.md"
+        questions.write_text(
+            questions.read_text(encoding="utf-8").replace(
+                "[B01: retry mental model](Goal.md#b01---retry-mental-model)", "B01", 1
+            ),
+            encoding="utf-8",
+        )
+
+        findings = self.check()
+
+        self.assertTrue(any(finding.id == "bare-entity-reference" and finding.file == "Questions.md" for finding in findings))
+
 
 if __name__ == "__main__":
     unittest.main()
