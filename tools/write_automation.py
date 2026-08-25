@@ -12,8 +12,14 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 from secrets import token_urlsafe
+import hashlib
+import json
+import os
 import re
+import tempfile
 
 
 ANKI_ACTIONS = frozenset({"add", "replace", "merge", "skip"})
@@ -207,7 +213,7 @@ class WriteOutcome:
 
 @dataclass(frozen=True)
 class ExternalWriteResult:
-    """Identity returned by an explicit adapter; card IDs are optional."""
+    """Идентификатор от явного адаптера; ID карточек необязательны."""
 
     target_identity: str
     anki_note_id: str | None = None
@@ -215,7 +221,7 @@ class ExternalWriteResult:
 
 
 class ExternalWriteTarget(Protocol):
-    """Узкая seam внешнего target; production adapter задаётся явно."""
+    """Узкая граница внешнего target; рабочий адаптер задаётся явно."""
 
     def is_available(self) -> bool: ...
 
@@ -224,6 +230,12 @@ class ExternalWriteTarget(Protocol):
     def preview_revision(self, request: WriteRequest) -> str | None: ...
 
     def write(self, request: WriteRequest) -> str | ExternalWriteResult: ...
+
+
+class AnkiConnectTransport(Protocol):
+    """Узкий транспорт AnkiConnect; тесты подменяют его без сетевого порта."""
+
+    def call(self, action: str, params: dict[str, object] | None = None) -> object: ...
 
 
 class TraceWriter(Protocol):
@@ -238,8 +250,16 @@ class GateVerifier(Protocol):
     def verify(self, request: WriteRequest) -> GateVerification: ...
 
 
+class ExternalWriteError(RuntimeError):
+    """Различимая ошибка внешнего target без превращения сбоя в успех."""
+
+
+class ExternalWritePending(ExternalWriteError):
+    """Нужен новый preview/reconciliation вместо внешней записи."""
+
+
 class UnavailableTarget:
-    """Безопасный production default: реальная запись невозможна."""
+    """Безопасная настройка по умолчанию: реальная запись невозможна."""
 
     def is_available(self) -> bool:
         return False
@@ -252,6 +272,321 @@ class UnavailableTarget:
 
     def write(self, request: WriteRequest) -> str:
         raise RuntimeError("Внешний target не настроен для записи")
+
+
+class AnkiConnectHttpTransport:
+    """Явно настроенный HTTP-транспорт для AnkiConnect API v6."""
+
+    def __init__(self, endpoint: str, *, timeout: float = 5.0) -> None:
+        if not endpoint:
+            raise ValueError("AnkiConnect endpoint должен быть передан явно.")
+        self.endpoint = endpoint
+        self.timeout = timeout
+
+    def call(self, action: str, params: dict[str, object] | None = None) -> object:
+        payload: dict[str, object] = {"action": action, "version": 6}
+        if params is not None:
+            payload["params"] = params
+        request = Request(
+            self.endpoint,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urlopen(request, timeout=self.timeout) as response:  # nosec B310: endpoint передаётся явно
+                response_data = json.load(response)
+        except (URLError, OSError, json.JSONDecodeError, TypeError) as error:
+            raise ExternalWriteError(f"AnkiConnect недоступен: {error}") from error
+        if not isinstance(response_data, dict) or "error" not in response_data or "result" not in response_data:
+            raise ExternalWriteError("AnkiConnect вернул неожиданный ответ протокола.")
+        if response_data["error"]:
+            raise ExternalWriteError(f"AnkiConnect вернул ошибку: {response_data['error']}")
+        return response_data["result"]
+
+
+class AnkiConnectAdapter:
+    """Конкретный адаптер AnkiConnect; endpoint или транспорт задаётся явно."""
+
+    def __init__(self, *, endpoint: str | None = None, transport: AnkiConnectTransport | None = None) -> None:
+        if transport is None and endpoint is None:
+            raise ValueError("AnkiConnectAdapter требует явный endpoint или транспорт.")
+        self.transport = transport or AnkiConnectHttpTransport(endpoint or "")
+
+    def is_available(self) -> bool:
+        try:
+            version = self.transport.call("version")
+        except Exception:
+            return False
+        return isinstance(version, int) and version >= 6
+
+    def exists(self, target_identity: str) -> bool:
+        note_id = self._note_id(target_identity)
+        if note_id is None:
+            return False
+        return bool(self._notes_info([note_id]))
+
+    def preview_revision(self, request: WriteRequest) -> str | None:
+        note_id = self._note_id(request.existing_target_identity or "")
+        if note_id is None:
+            result = self.transport.call("canAddNotesWithErrorDetail", {"notes": [self._note_payload(request)]})
+            if not isinstance(result, list) or not result or not isinstance(result[0], dict):
+                raise ExternalWriteError("AnkiConnect canAddNotesWithErrorDetail должен вернуть список результатов.")
+            can_add = result[0].get("canAdd")
+            error = result[0].get("error", "")
+            if not isinstance(can_add, bool):
+                raise ExternalWriteError("AnkiConnect canAddNotesWithErrorDetail не вернул canAdd.")
+            if not can_add:
+                return None
+            return f"anki-add:canAdd={can_add}:error={error or '-'}"
+        info = self._single_note_info(note_id)
+        if info is None:
+            return None
+        cards = tuple(str(card) for card in info.get("cards", ()) if isinstance(card, int | str))
+        mod = info.get("mod")
+        if not isinstance(mod, int | str) or mod == "":
+            return None
+        return f"note:{note_id}:{mod}:{','.join(cards)}"
+
+    def write(self, request: WriteRequest) -> ExternalWriteResult:
+        if request.action == "skip":
+            return ExternalWriteResult("skip")
+        if request.action not in ANKI_ACTIONS - {"skip"}:
+            raise ExternalWriteError(f"Anki action `{request.action}` не поддержан.")
+        fields = self._fields_from_request(request)
+        tags = self._tags_from_request(request)
+        if request.action == "add":
+            note_id = self.transport.call(
+                "addNote",
+                {"note": self._note_payload(request, fields=fields, tags=tags)},
+            )
+            if not isinstance(note_id, int | str) or note_id == "":
+                raise ExternalWriteError("AnkiConnect addNote не вернул Note ID.")
+        else:
+            note_id = self._note_id(request.existing_target_identity or "")
+            if note_id is None:
+                raise ExternalWriteError("Для replace/merge нужен существующий Anki Note ID.")
+            self.transport.call("updateNote", {"note": {"id": int(note_id), "fields": fields, "tags": tags}})
+        return self._result_for_note(str(note_id))
+
+    def _notes_info(self, note_ids: list[str]) -> list[dict[str, object]]:
+        result = self.transport.call("notesInfo", {"notes": [int(note_id) for note_id in note_ids]})
+        if not isinstance(result, list):
+            raise ExternalWriteError("AnkiConnect notesInfo должен вернуть список.")
+        return [note for note in result if isinstance(note, dict)]
+
+    def _single_note_info(self, note_id: str) -> dict[str, object] | None:
+        notes = self._notes_info([note_id])
+        return notes[0] if notes else None
+
+    def _result_for_note(self, note_id: str) -> ExternalWriteResult:
+        info = self._single_note_info(note_id)
+        cards: tuple[str, ...] = ()
+        if info is not None:
+            raw_cards = info.get("cards", ())
+            if isinstance(raw_cards, list):
+                cards = tuple(str(card) for card in raw_cards if isinstance(card, int | str))
+        return ExternalWriteResult(f"note:{note_id}", note_id, cards)
+
+    @staticmethod
+    def _note_id(identity: str) -> str | None:
+        normalized = identity.strip()
+        if re.fullmatch(r"\d+", normalized):
+            return normalized
+        match = re.fullmatch(r"note:(\d+)", normalized)
+        return match.group(1) if match else None
+
+    @staticmethod
+    def _fields_from_request(request: WriteRequest) -> dict[str, str]:
+        field_names = [field.strip() for field in (request.anki_fields or "").split(",") if field.strip()]
+        content_by_field: dict[str, list[str]] = {}
+        current_field: str | None = None
+        for line in request.proposed_content.splitlines():
+            matched_field: str | None = None
+            matched_value = ""
+            for field_name in field_names:
+                match = re.match(rf"^{re.escape(field_name)}\s*:\s?(.*)$", line)
+                if match:
+                    matched_field = field_name
+                    matched_value = match.group(1)
+                    break
+            if matched_field is not None:
+                current_field = matched_field
+                content_by_field[current_field] = [matched_value]
+            elif current_field is not None:
+                content_by_field[current_field].append(line)
+        missing = [field for field in field_names if field not in content_by_field]
+        if missing:
+            raise ExternalWriteError(f"Proposed content не содержит поля Anki: {', '.join(missing)}")
+        return {field: "\n".join(lines).strip() for field, lines in content_by_field.items()}
+
+    @staticmethod
+    def _tags_from_request(request: WriteRequest) -> list[str]:
+        return [tag for tag in re.split(r"\s+", request.anki_tags or "") if tag]
+
+    def _note_payload(
+        self,
+        request: WriteRequest,
+        *,
+        fields: dict[str, str] | None = None,
+        tags: list[str] | None = None,
+    ) -> dict[str, object]:
+        return {
+            "deckName": request.anki_deck or "",
+            "modelName": request.anki_note_type or "",
+            "fields": fields if fields is not None else self._fields_from_request(request),
+            "tags": tags if tags is not None else self._tags_from_request(request),
+        }
+
+
+class ObsidianFilesystemAdapter:
+    """Конкретный адаптер для Markdown-файлов внутри явно переданного vault root."""
+
+    def __init__(self, vault_root: Path | str) -> None:
+        self.vault_root = Path(vault_root).resolve()
+
+    def is_available(self) -> bool:
+        return self.vault_root.is_dir() and os.access(self.vault_root, os.R_OK | os.W_OK)
+
+    def exists(self, target_identity: str) -> bool:
+        try:
+            path = self._target_path(target_identity.split("#", 1)[0])
+        except ExternalWriteError:
+            return False
+        return path.is_file()
+
+    def preview_revision(self, request: WriteRequest) -> str | None:
+        path = self._target_path(request.obsidian_target_path or "")
+        return self._revision(path)
+
+    def write(self, request: WriteRequest) -> ExternalWriteResult:
+        if request.action == "skip":
+            return ExternalWriteResult("skip")
+        path = self._target_path(request.obsidian_target_path or "")
+        before_revision = self._revision(path)
+        if request.action == "add":
+            if path.exists():
+                raise ExternalWriteError("Obsidian target уже существует; нужен append/merge/replace-section.")
+            updated = request.proposed_content
+        else:
+            if not path.is_file():
+                raise ExternalWriteError("Obsidian target не найден.")
+            current = path.read_text(encoding="utf-8")
+            if request.action == "append":
+                updated = current.rstrip() + "\n\n" + request.proposed_content.rstrip() + "\n"
+            elif request.action == "replace-section":
+                updated = self._replace_section(current, request.obsidian_section or "", request.proposed_content)
+            elif request.action == "merge":
+                updated = self._deterministic_merge_section(
+                    current,
+                    request.obsidian_section or "",
+                    request.proposed_content,
+                )
+            else:
+                raise ExternalWriteError(f"Obsidian action `{request.action}` не поддержан.")
+        if before_revision != self._revision(path):
+            raise ExternalWriteError("Obsidian target изменился перед записью; нужен новый preview.")
+        self._atomic_write(path, updated)
+        identity = self._identity(path, request.obsidian_section if request.action in {"replace-section", "merge"} else None)
+        return ExternalWriteResult(identity)
+
+    def _target_path(self, target_path: str) -> Path:
+        if not target_path or Path(target_path).is_absolute():
+            raise ExternalWriteError("Целевой путь Obsidian должен быть относительным путём внутри vault.")
+        if Path(target_path).suffix.lower() != ".md":
+            raise ExternalWriteError("Адаптер Obsidian пишет только Markdown-файлы `.md`.")
+        candidate = (self.vault_root / target_path).resolve(strict=False)
+        if not self._inside_vault(candidate):
+            raise ExternalWriteError("Целевой путь Obsidian выходит за пределы vault.")
+        existing = self._nearest_existing(candidate)
+        if existing is not None and existing.resolve() != existing.absolute():
+            resolved_existing = existing.resolve()
+            if not self._inside_vault(resolved_existing):
+                raise ExternalWriteError("Символическая ссылка Obsidian выходит за пределы vault.")
+        return candidate
+
+    def _inside_vault(self, path: Path) -> bool:
+        return path == self.vault_root or self.vault_root in path.parents
+
+    @staticmethod
+    def _nearest_existing(path: Path) -> Path | None:
+        current = path
+        while not current.exists():
+            parent = current.parent
+            if parent == current:
+                return None
+            current = parent
+        return current
+
+    def _revision(self, path: Path) -> str:
+        if not path.exists():
+            return "missing"
+        if not path.is_file():
+            raise ExternalWriteError("Obsidian target должен быть Markdown-файлом.")
+        content = path.read_bytes()
+        stat = path.stat()
+        digest = hashlib.sha256(content).hexdigest()
+        return f"sha256:{digest}:size:{stat.st_size}:mtime:{stat.st_mtime_ns}"
+
+    def _identity(self, path: Path, section: str | None = None) -> str:
+        relative = path.relative_to(self.vault_root).as_posix()
+        if section:
+            return f"{relative}#{section}"
+        return relative
+
+    @staticmethod
+    def _replace_section(content: str, section: str, replacement: str) -> str:
+        bounds = ObsidianFilesystemAdapter._section_bounds(content, section)
+        if bounds is None:
+            raise ExternalWriteError(f"Obsidian section `{section}` не найдена.")
+        start, end = bounds
+        return content[:start] + replacement.rstrip() + "\n" + content[end:]
+
+    @staticmethod
+    def _deterministic_merge_section(content: str, section: str, proposed_content: str) -> str:
+        proposed = proposed_content.strip()
+        heading = re.match(r"^(?P<level>#{1,6})\s+(?P<title>.+?)\s*$", proposed, flags=re.MULTILINE)
+        if heading is None or heading.group("title") != section.strip():
+            raise ExternalWritePending("Неоднозначный merge: предложенный контент должен содержать тот же Markdown-заголовок.")
+        bounds = ObsidianFilesystemAdapter._section_bounds(content, section)
+        if bounds is None:
+            raise ExternalWriteError(f"Obsidian section `{section}` не найдена.")
+        body = proposed[heading.end():].strip()
+        if not body:
+            raise ExternalWritePending("Неоднозначный merge: предложенный контент не содержит нового тела секции.")
+        start, end = bounds
+        existing_section = content[start:end].rstrip()
+        merged_section = existing_section + "\n\n" + body + "\n"
+        return content[:start] + merged_section + content[end:]
+
+    @staticmethod
+    def _section_bounds(content: str, section: str) -> tuple[int, int] | None:
+        escaped = re.escape(section.strip())
+        heading = re.search(rf"^(?P<level>#{{1,6}})\s+{escaped}\s*$", content, flags=re.MULTILINE)
+        if heading is None:
+            return None
+        level = len(heading.group("level"))
+        next_heading = re.search(rf"^#{{1,{level}}}\s+", content[heading.end():], flags=re.MULTILINE)
+        end = heading.end() + next_heading.start() if next_heading else len(content)
+        return heading.start(), end
+
+    @staticmethod
+    def _atomic_write(path: Path, content: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp_name = ""
+        try:
+            with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as temp_file:
+                temp_name = temp_file.name
+                temp_file.write(content)
+                temp_file.flush()
+                os.fsync(temp_file.fileno())
+            os.replace(temp_name, path)
+        except Exception as error:
+            if temp_name:
+                try:
+                    Path(temp_name).unlink(missing_ok=True)
+                except OSError:
+                    pass
+            raise ExternalWriteError(f"Atomic write в Obsidian не выполнен: {error}") from error
 
 
 class InMemoryTraceWriter:
@@ -335,7 +670,9 @@ class WriteAutomation:
         target_revision = self._revision(target, request) if available else None
 
         if not available and request.action != "skip":
-            blockers.append("Target unavailable: внешняя запись остаётся pending.")
+            blockers.append("Write Target недоступен: внешняя запись остаётся Pending Write.")
+        if available and request.action != "skip" and target_revision is None:
+            blockers.append("Revision Write Target недоступна; нужен reconciliation preview до записи.")
         if request.existing_target_identity:
             if not available:
                 blockers.append("Нельзя проверить предыдущий external target до восстановления доступности.")
@@ -350,6 +687,8 @@ class WriteAutomation:
                         ("Proposed content или Check summary изменились; нужен новый preview и approval.",),
                         target_revision,
                     )
+                if request.action in {"replace", "merge", "replace-section"}:
+                    return self._new_preview(request, True, "ready-for-approval", tuple(), target_revision)
                 return self._new_preview(request, True, "no-op", tuple(), target_revision)
             else:
                 return self._new_preview(
@@ -407,6 +746,8 @@ class WriteAutomation:
             return self._record_pending(request, "Target изменился после dry-run; подготовьте новый preview и approval.")
         try:
             result = target.write(request)
+        except ExternalWritePending as error:
+            return self._record_pending(request, f"{error} Подготовьте reconciliation preview.")
         except Exception as error:
             outcome = self._outcome(request, "failed", None, f"Внешняя запись не выполнена: {error}. Повторите preview после проверки target.", target_available=True)
             self._record(outcome)
