@@ -418,6 +418,24 @@ class TopicWorkspaceCheckerTests(unittest.TestCase):
 
         self.assertTrue(any(finding.id == "missing-parent-topic" for finding in findings))
 
+    def test_reports_topic_row_outside_topics_table(self) -> None:
+        row = (
+            "| profile | rabbitmq | misplaced | `misplaced-topic` | `intake` | "
+            "`topics/rabbitmq/misplaced-topic` | [Goal.md](rabbitmq/misplaced-topic/Goal.md) | - | - |\n"
+        )
+        self.index.write_text(
+            "# Topic Index\n\n"
+            "## Topics\n\n"
+            + self.index.read_text(encoding="utf-8")
+            + "\n## Topic Tree\n\n- -\n"
+            + row,
+            encoding="utf-8",
+        )
+
+        findings = self.check()
+
+        self.assertTrue(any(finding.id == "misplaced-index-row" for finding in findings))
+
     def test_warns_about_bare_id_in_significant_evidence_field_only(self) -> None:
         practice = self.workspace / "Practice.md"
         practice.write_text(

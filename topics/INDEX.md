@@ -15,6 +15,7 @@
 | Learning Profile | Subject | Topic | Stable Slug | Topic State | Topic Workspace | Goal | Parent Topic | Related Subjects |
 |---|---|---|---|---|---|---|---|---|
 | Junior+/Middle Kotlin Backend для ЦУП РТ / АИС МИДИО | RabbitMQ | retry без идемпотентности | `rabbitmq-retry-without-idempotency` | `learning` | `topics/rabbitmq/retry-without-idempotency` | [Goal.md](rabbitmq/retry-without-idempotency/Goal.md) | - | reliability, Postgres |
+| Junior+/Middle Kotlin Backend для ЦУП РТ / АИС МИДИО | mongodb | MongoDB: базовая модель хранения, записи и чтения для backend | `mongodb-backend-fundamentals` | `diagnosing` | `topics/mongodb/mongodb-backend-fundamentals` | [Goal.md](mongodb/mongodb-backend-fundamentals/Goal.md) | - | - |
 
 ## Topic Tree
 

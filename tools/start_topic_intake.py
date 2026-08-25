@@ -184,7 +184,13 @@ def append_index_row(index_text: str, request: IntakeRequest) -> str:
         f"| {request.learning_profile} | {request.subject} | {request.topic} | `{request.stable_slug}` | `intake` | "
         f"`{workspace}` | [Goal.md]({subject_slug}/{request.stable_slug}/Goal.md) | - | - |\n"
     )
-    return index_text.rstrip() + "\n" + row
+    topic_tree_match = re.search(r"^## Topic Tree\s*$", index_text, flags=re.MULTILINE)
+    if topic_tree_match is None:
+        return index_text.rstrip() + "\n" + row
+
+    topics_table = index_text[:topic_tree_match.start()].rstrip()
+    topic_tree = index_text[topic_tree_match.start():].lstrip("\n")
+    return topics_table + "\n" + row + "\n" + topic_tree
 
 
 def remove_empty_parent(directory: Path, stop_at: Path) -> None:

@@ -492,17 +492,34 @@ def validate_gates(files: dict[str, str], findings: list[Finding]) -> None:
             append_finding(findings, "raw-knowledge-consolidation", "error", "blocks knowledge-consolidation", "Knowledge.md", "Knowledge Consolidation", "перенесите только curated Knowledge, без raw/archive/source dump")
 
 
+def topic_index_sections(text: str) -> tuple[str, str]:
+    topics_match = re.search(r"^## Topics\s*$", text, flags=re.MULTILINE)
+    if topics_match is None:
+        return text, ""
+    next_heading = re.search(r"^##\s+", text[topics_match.end():], flags=re.MULTILINE)
+    topics_end = topics_match.end() + next_heading.start() if next_heading else len(text)
+    return text[topics_match.end():topics_end], text[:topics_match.start()] + text[topics_end:]
+
+
+def topic_index_rows(text: str) -> list[list[str]]:
+    return [
+        [cell.strip() for cell in line.strip().strip("|").split("|")]
+        for line in text.splitlines()
+        if line.startswith("|") and "Topic Workspace" not in line and "---" not in line
+    ]
+
+
 def validate_index(index: Path, workspace: Path, goal: str, findings: list[Finding]) -> None:
     if not index.is_file():
         append_finding(findings, "missing-index", "error", "blocks handoff", str(index), "Topic Index", "укажите существующий Topic Index")
         return
     text = index.read_text(encoding="utf-8")
     workspace_rel = str(workspace)
-    rows = [
-        [cell.strip() for cell in line.strip().strip("|").split("|")]
-        for line in text.splitlines()
-        if line.startswith("|") and "Topic Workspace" not in line and "---" not in line
-    ]
+    topics_section, outside_topics = topic_index_sections(text)
+    for row in topic_index_rows(outside_topics):
+        if len(row) >= 9:
+            append_finding(findings, "misplaced-index-row", "error", "blocks handoff", str(index), row[5], "перенесите строку Topic Workspace в таблицу раздела Topics")
+    rows = topic_index_rows(topics_section)
     topic_names = {row[2].strip() for row in rows if len(row) > 2}
     if len(rows) != len({row[5] for row in rows if len(row) > 5}):
         append_finding(findings, "duplicate-index-workspace", "error", "blocks handoff", str(index), "Topic Workspace", "оставьте одну строку на Topic Workspace")

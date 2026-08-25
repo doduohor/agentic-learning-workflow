@@ -17,7 +17,15 @@ class TopicIntakeTests(unittest.TestCase):
         self.root = Path(self.temp_dir.name)
         (self.root / "topics").mkdir()
         (self.root / "topics" / "INDEX.md").write_text(
-            (REPO_ROOT / "topics" / "INDEX.md").read_text(encoding="utf-8"),
+            "# Topic Index\n\n"
+            "## Topics\n\n"
+            "| Learning Profile | Subject | Topic | Stable Slug | Topic State | Topic Workspace | Goal | Parent Topic | Related Subjects |\n"
+            "|---|---|---|---|---|---|---|---|---|\n"
+            "| Junior+/Middle Kotlin Backend для ЦУП РТ / АИС МИДИО | RabbitMQ | retry без идемпотентности | `rabbitmq-retry-without-idempotency` | `learning` | "
+            "`topics/rabbitmq/retry-without-idempotency` | [Goal.md](rabbitmq/retry-without-idempotency/Goal.md) | - | reliability, Postgres |\n"
+            "\n## Topic Tree\n\n"
+            "Связи Parent Topic показываются здесь, когда они появляются.\n\n"
+            "- -\n",
             encoding="utf-8",
         )
         shutil.copytree(
@@ -51,6 +59,14 @@ class TopicIntakeTests(unittest.TestCase):
         self.assertEqual({path.name for path in result.workspace.iterdir()}, {
             "Goal.md", "Knowledge.md", "Practice.md", "Questions.md", "Weaknesses.md", "RepetitionLog.md", "Sources.md",
         })
+
+    def test_appends_index_row_to_topics_table_before_topic_tree(self) -> None:
+        result = create_topic_workspace(self.root, self.request(), templates_dir=REPO_ROOT / "docs/learning-system/templates")
+
+        index_text = (self.root / "topics/INDEX.md").read_text(encoding="utf-8")
+        row = "| Junior+/Middle Kotlin Backend | Postgres | изоляция транзакций | `postgres-transaction-isolation` | `intake` | "
+        self.assertLess(index_text.index(row), index_text.index("## Topic Tree"))
+        self.assertEqual(result.workspace, self.root / "topics/postgres/postgres-transaction-isolation")
 
     def test_rejects_a_conflicting_workspace_without_writing(self) -> None:
         target = self.root / "topics/postgres/postgres-transaction-isolation"
