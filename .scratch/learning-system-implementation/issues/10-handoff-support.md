@@ -6,9 +6,9 @@
 
 **Status:** ready-for-agent
 
-- [ ] Handoff workflow различает Wayfinder Handoff и Topic Workspace Handoff.
-- [ ] Для Topic Workspace новая сессия читает `Goal.md` и связанные owner artifacts, если следующий шаг зависит от Weaknesses, Questions, Sources, RepetitionLog, Practice или Knowledge.
-- [ ] Optional `Handoff.md` создается только при риске потери контекста и не становится source of truth.
-- [ ] Handoff явно показывает next safe action, Role Mode и Agent Write Boundary.
-- [ ] Open Weaknesses, pending Source Checks, Card Candidates, Active Repetitions и missed repetitions не теряются при `pause`/`resume`.
-- [ ] Supporting agent без ясного Role Mode работает через Agent Proposal и не меняет state-changing artifacts.
+- [x] Handoff workflow различает Wayfinder Handoff и Topic Workspace Handoff.
+- [x] Для Topic Workspace новая сессия читает `Goal.md` и связанные owner artifacts, если следующий шаг зависит от Weaknesses, Questions, Sources, RepetitionLog, Practice или Knowledge.
+- [x] Optional `Handoff.md` создается только при риске потери контекста и не становится source of truth.
+- [x] Handoff явно показывает next safe action, Role Mode и Agent Write Boundary.
+- [x] Open Weaknesses, pending Source Checks, Card Candidates, Active Repetitions и missed repetitions не теряются при `pause`/`resume`.
+- [x] Supporting agent без ясного Role Mode работает через Agent Proposal и не меняет state-changing artifacts.

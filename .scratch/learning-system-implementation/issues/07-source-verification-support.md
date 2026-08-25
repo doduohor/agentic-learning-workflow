@@ -4,11 +4,11 @@
 
 **Blocked by:** 01: Сделать шаблоны учебных артефактов; 02: Сделать легковесную проверку Topic Workspace; 03: Сделать общие инструкции для учебных агентов.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Source workflow создает или обновляет Source Records в `Sources.md` в рамках принятого owner model.
-- [ ] `Sources.md` остается единственным владельцем Source Check Result.
-- [ ] `needs-check` и `Нужно проверить` блокируют `production-ready`, `completed`, Card Promotion и Knowledge Consolidation, когда claim нужен для gate.
-- [ ] Source Agent может предлагать изменения в Knowledge, Questions или Goal, но state-changing edits применяет Learning Orchestrator.
-- [ ] Workflow явно обрабатывает недоступность источников и не подтверждает claims по памяти агента.
-- [ ] Реальная внешняя проверка конкретной RabbitMQ-темы не входит в этот ticket, если она не задана отдельно.
+- [x] Source workflow создает или обновляет Source Records в `Sources.md` в рамках принятого owner model.
+- [x] `Sources.md` остается единственным владельцем Source Check Result.
+- [x] `needs-check` и `Нужно проверить` блокируют `production-ready`, `completed`, Card Promotion и Knowledge Consolidation, когда claim нужен для gate.
+- [x] Source Agent может предлагать изменения в Knowledge, Questions или Goal, но state-changing edits применяет Learning Orchestrator.
+- [x] Workflow явно обрабатывает недоступность источников и не подтверждает claims по памяти агента.
+- [x] Реальная внешняя проверка конкретной RabbitMQ-темы не входит в этот ticket, если она не задана отдельно.

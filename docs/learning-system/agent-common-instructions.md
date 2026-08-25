@@ -49,7 +49,8 @@ owner file и отсутствие конфликта с другим агент
 
 Для version-sensitive, application-sensitive, production, security,
 protocol-semantics и tooling-behavior claims сначала смотрите
-[workflow Source Check](../wayfinder/decisions/09-design-source-verification-workflow.md).
+[workflow Source Check](source-verification-workflow.md) и
+[принятое решение](../wayfinder/decisions/09-design-source-verification-workflow.md).
 Если подтверждения нет, пишите `needs-check` в `Sources.md` и `Нужно проверить`
 в связанных артефактах. Такой claim не используется для production-ready,
 Completion Evidence, снятия blocker Weakness, Card Promotion или Knowledge
@@ -63,13 +64,28 @@ Source Check gate пройден и выполнены Obsidian/Anki Duplicate C
 Learning Orchestrator; supporting agent может лишь предложить его. Подробный порядок — в
 [workflow интеграции](../wayfinder/decisions/12-design-obsidian-and-anki-write-automation.md).
 
+Read-only порядок, формат Duplicate Check summary и unavailable mode описаны в
+[workflow проверки дублей](duplicate-check-workflow.md). Summary для Card
+Promotion хранится в `Questions.md`, для Knowledge Consolidation — в
+`Knowledge.md`; supporting agent возвращает его как Agent Proposal, а итоговый
+trace применяет только Learning Orchestrator.
+
 Только Orchestrator-controlled workflow может писать в Obsidian или Anki: он
 сначала показывает dry-run preview, получает user approval, проверяет доступность
 target и trace/idempotency. Supporting agents могут готовить текст и proposal,
 но не пишут во внешние системы напрямую.
 
+Реализационный порядок preview, gates, states `pending`/`no-op`/`partial` и
+owner trace описан в [workflow подтверждаемой записи](write-automation-workflow.md).
+
 ## Условные ссылки
 
+- Перед lifecycle-командой читайте
+  [интерфейс учебных команд](lifecycle-command-interface.md): gates и next safe
+  action не заменяют owner artifacts.
+- При паузе, возобновлении или смене Codex-сессии читайте
+  [workflow handoff](session-handoff-workflow.md): Role Mode и Agent Write
+  Boundary не заменяют owner artifacts.
 - Для работы с длинными заметками и артефактами сессии читайте
   [правила архива](../wayfinder/decisions/10-design-session-notes-and-practice-artifact-archive.md):
   `sessions/` append-only по умолчанию и не заменяет owner files.

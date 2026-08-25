@@ -6,9 +6,9 @@
 
 **Status:** ready-for-agent
 
-- [ ] Перед любой внешней записью формируется dry-run preview с target, action, proposed content, Duplicate Check summary, Source Check summary, trace и expected Markdown updates.
-- [ ] Внешняя запись не выполняется без user approval после preview.
-- [ ] Anki write выполняется только после Card Promotion decision и пройденных gates.
-- [ ] Obsidian write выполняется только после Knowledge Consolidation decision и пройденных gates.
-- [ ] Write outcome фиксируется в owner artifacts: `Questions.md` для Anki/Card Promotion, `Knowledge.md` для Obsidian/Knowledge Consolidation, `Goal.md` только кратко при влиянии на next action или Completion Criteria.
-- [ ] Re-run/idempotency behavior покрывает no-op, pending, partial, failed и reconciliation preview cases.
+- [x] Перед любой внешней записью формируется dry-run preview с target, action, proposed content, Duplicate Check summary, Source Check summary, trace и expected Markdown updates.
+- [x] Внешняя запись не выполняется без user approval после preview.
+- [x] Anki write выполняется только после Card Promotion decision и пройденных gates.
+- [x] Obsidian write выполняется только после Knowledge Consolidation decision и пройденных gates.
+- [x] Write outcome фиксируется в owner artifacts: `Questions.md` для Anki/Card Promotion, `Knowledge.md` для Obsidian/Knowledge Consolidation, `Goal.md` только кратко при влиянии на next action или Completion Criteria.
+- [x] Re-run/idempotency behavior покрывает no-op, pending, partial, failed и reconciliation preview cases.

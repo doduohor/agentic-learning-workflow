@@ -6,9 +6,9 @@
 
 **Status:** ready-for-agent
 
-- [ ] Checker читает Topic Index и одну Topic Workspace и сообщает findings без изменения файлов.
-- [ ] Checker проверяет owner invariants для `Goal.md`, `Sources.md`, `Questions.md`, `Knowledge.md`, `Practice.md`, `Weaknesses.md` и `RepetitionLog.md`.
-- [ ] Checker различает severity и gate impact: например `blocks production-ready`, `blocks completed`, `blocks card-promotion`, `blocks knowledge-consolidation`, `blocks handoff`, `does not block`.
-- [ ] Checker сообщает blocking finding, если `needs-check` используется как подтвержденное evidence для `production-ready`, `completed`, Card Promotion или Knowledge Consolidation.
-- [ ] Checker сообщает, когда Card Candidate имеет `promoted` без Duplicate Check, Card Trace, Promotion Decision или Source Check gates.
-- [ ] Checker ничего не исправляет сам и не вводит YAML/JSON machine-readable schema.
+- [x] Checker читает Topic Index и одну Topic Workspace и сообщает findings без изменения файлов.
+- [x] Checker проверяет owner invariants для `Goal.md`, `Sources.md`, `Questions.md`, `Knowledge.md`, `Practice.md`, `Weaknesses.md` и `RepetitionLog.md`.
+- [x] Checker различает severity и gate impact: например `blocks production-ready`, `blocks completed`, `blocks card-promotion`, `blocks knowledge-consolidation`, `blocks handoff`, `does not block`.
+- [x] Checker сообщает blocking finding, если `needs-check` используется как подтвержденное evidence для `production-ready`, `completed`, Card Promotion или Knowledge Consolidation.
+- [x] Checker сообщает, когда Card Candidate имеет `promoted` без Duplicate Check, Card Trace, Promotion Decision или Source Check gates.
+- [x] Checker ничего не исправляет сам и не вводит YAML/JSON machine-readable schema.

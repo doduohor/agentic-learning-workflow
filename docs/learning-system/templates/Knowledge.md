@@ -56,3 +56,6 @@
 - Source Check: `-`
 - Dry-run preview и user approval: `-`
 - Obsidian write outcome: `-`
+- Target path/note/section: `-`
+- Linked evidence: `-`
+- Change reason (`replace`/`merge`): `-`

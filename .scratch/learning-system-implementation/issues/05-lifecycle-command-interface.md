@@ -6,9 +6,9 @@
 
 **Status:** ready-for-agent
 
-- [ ] Для каждого lifecycle scenario описаны входные условия, читаемый контекст, допустимые изменения и stop conditions.
-- [ ] Интерфейс сохраняет single-writer state model: state-changing edits применяет Learning Orchestrator.
-- [ ] Команды не обходят Source Check, Duplicate Check, Card Promotion, Knowledge Consolidation и Lightweight Checker gates.
-- [ ] `pause` и `resume` сохраняют next safe action и не теряют open Weaknesses, pending Source Checks, Card Candidates или Active Repetitions.
-- [ ] `complete` явно блокируется при open blocker Weakness, missing Completion Evidence или blocking `needs-check`.
-- [ ] Решение не создает реальные slash commands, если ticket ограничен только дизайном интерфейса.
+- [x] Для каждого lifecycle scenario описаны входные условия, читаемый контекст, допустимые изменения и stop conditions.
+- [x] Интерфейс сохраняет single-writer state model: state-changing edits применяет Learning Orchestrator.
+- [x] Команды не обходят Source Check, Duplicate Check, Card Promotion, Knowledge Consolidation и Lightweight Checker gates.
+- [x] `pause` и `resume` сохраняют next safe action и не теряют open Weaknesses, pending Source Checks, Card Candidates или Active Repetitions.
+- [x] `complete` явно блокируется при open blocker Weakness, missing Completion Evidence или blocking `needs-check`.
+- [x] Решение не создает реальные slash commands, если ticket ограничен только дизайном интерфейса.
