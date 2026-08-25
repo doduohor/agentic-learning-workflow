@@ -1,6 +1,6 @@
 # Wayfinder Map: Codex Learning System
 
-Last updated: 2026-08-24
+Last updated: 2026-08-25
 
 ## Destination
 
@@ -101,6 +101,10 @@ Last updated: 2026-08-24
 
    Закреплен Orchestrator-controlled write workflow для фактической записи в Obsidian и Anki после Card Promotion или Knowledge Consolidation: обязательный dry-run preview, user approval, independent write targets, unavailable mode, idempotency/re-run safety, trace outcome в `Questions.md` и `Knowledge.md`, pre-write checks и failure modes без введения YAML/JSON machine-readable schema.
 
+13. [Design Topic Lifecycle Skills](./decisions/13-design-topic-lifecycle-skills.md) - принято.
+
+   Закреплена первая версия Topic Lifecycle Skills репозитория под `.agents/skills/`: `learn-start`, `learn-continue`, `learn-report`. Приняты preview перед `learn-start`, продолжение от ближайшего безопасного `Next Actions`, пакет proposed changes перед записью, read-only русский `learn-report` и опора на существующие утилиты проекта.
+
 ## Current State
 
 Выполнено:
@@ -125,6 +129,7 @@ Last updated: 2026-08-24
 - архив Session Notes и Practice Artifacts спроектирован;
 - lightweight checker для Entity References и ID спроектирован;
 - write automation для Obsidian и Anki спроектирована на уровне workflow, gates, preview, approval, trace и failure modes;
+- первая версия Topic Lifecycle Skills спроектирована: `learn-start`, `learn-continue`, `learn-report`;
 - prototype одной Topic Workspace создан: [`topics/rabbitmq/retry-without-idempotency/`](../../topics/rabbitmq/retry-without-idempotency/).
 
 ## Prototype Findings

@@ -80,6 +80,10 @@ _Avoid_: practice task, lesson script
 A repeatable user or orchestrator scenario that moves a Topic through its lifecycle while reading and updating learning artifacts under the single-writer state model.
 _Avoid_: ad hoc prompt, raw slash command
 
+**Topic Lifecycle Skill**:
+A Codex skill that gives the learner a stable user-facing entry point into one or more Topic Lifecycle Scenarios while preserving the Topic Workspace ownership and gates.
+_Avoid_: Agent File, slash command, raw prompt
+
 **Block Requirement**:
 Whether a Block is required for Topic completion or optional future learning.
 _Avoid_: priority
