@@ -4,6 +4,20 @@
 
 Запрещено делать варианты, где рекомендация выглядит единственно профессиональной, а остальные варианты очевидно слабые, утрированные или декоративные. Формулируй варианты коротко, конкретно и нормальным русским языком: без усложнения ради солидности и без чрезмерного упрощения.
 
+## Agent skills
+
+### Issue tracker
+
+Issues and specs for this repo are tracked in GitHub Issues via `gh`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+This repo uses the default five triage labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This repo uses a single-context domain doc layout with root `CONTEXT.md` and decisions in `docs/wayfinder/decisions/`. See `docs/agents/domain.md`.
+
 ## Anki cards and Obsidian context
 
 When preparing or judging Anki cards for the user, use the Obsidian vault at `/mnt/c/Users/Sergey/Documents/GPT/Work` as required context.
