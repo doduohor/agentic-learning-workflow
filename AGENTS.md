@@ -18,6 +18,12 @@ This repo uses the default five triage labels. See `docs/agents/triage-labels.md
 
 This repo uses a single-context domain doc layout with root `CONTEXT.md` and decisions in `docs/wayfinder/decisions/`. See `docs/agents/domain.md`.
 
+### C4 diagrams
+
+При C4 и Structurizr DSL, когда требуется создание или изменение диаграммы, прочитай
+`docs/agents/c4-structurizr-dsl.md`; для обычных диаграмм без C4/Structurizr DSL
+этот документ не требуется.
+
 ## Anki cards and Obsidian context
 
 When preparing or judging Anki cards for the user, use the Obsidian vault at `/mnt/c/Users/Sergey/Documents/GPT/Work` as required context.
