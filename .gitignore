@@ -2,3 +2,5 @@
 .agent-reports/
 .scratch/
 __pycache__/
+docs/diagrams/*
+docs/superpowers/*

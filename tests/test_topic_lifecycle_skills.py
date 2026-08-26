@@ -124,6 +124,14 @@ class C4StructurizrDslDocumentationContractTests(unittest.TestCase):
         "Проверка результата",
         "Чеклист типичных ошибок",
     )
+    REQUIRED_REFERENCE_HEADINGS = (
+        "Полный справочник Structurizr DSL",
+        "Лексические правила и структура файла",
+        "Workspace, constants и переменные",
+        "Идентификаторы и области видимости",
+        "Model и типы элементов",
+        "Общие свойства элементов",
+    )
 
     def test_instruction_exists_and_has_required_sections(self) -> None:
         self.assertTrue(self.DOC.is_file())
@@ -131,6 +139,9 @@ class C4StructurizrDslDocumentationContractTests(unittest.TestCase):
         for heading in self.REQUIRED_HEADINGS:
             with self.subTest(heading=heading):
                 self.assertIn(f"## {heading}", text)
+        for heading in self.REQUIRED_REFERENCE_HEADINGS:
+            with self.subTest(heading=heading):
+                self.assertIn(heading, text)
 
     def test_agent_pointer_is_specific_and_discoverable(self) -> None:
         text = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
@@ -160,6 +171,45 @@ class C4StructurizrDslDocumentationContractTests(unittest.TestCase):
         ):
             with self.subTest(anchor=anchor):
                 self.assertIn(anchor, text)
+
+    def test_instruction_covers_issue_8_dsl_basics_and_sources(self) -> None:
+        text = self.DOC.read_text(encoding="utf-8")
+        for marker in (
+            "workspace",
+            "model",
+            "configuration",
+            "!const",
+            "!var",
+            "${NAME}",
+            "!identifiers hierarchical",
+            "this",
+            "person",
+            "softwareSystem",
+            "container",
+            "component",
+            "custom element",
+            "archetype",
+            "group",
+            "description",
+            "technology",
+            "tags",
+            "url",
+            "properties",
+            "perspectives",
+            "instances",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, text)
+
+        for source in (
+            "https://docs.structurizr.com/dsl/basics",
+            "https://docs.structurizr.com/dsl/language",
+            "https://docs.structurizr.com/dsl/identifiers",
+            "https://docs.structurizr.com/dsl/archetypes",
+            "structurizr-dsl-for-agents-research.md",
+        ):
+            with self.subTest(source=source):
+                self.assertIn(source, text)
 
 
 if __name__ == "__main__":
